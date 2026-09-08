@@ -5,20 +5,35 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Mi Mapa</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IM+Fell+English&family=MedievalSharp&display=swap" rel="stylesheet">
 <style>
+  /* Nota: la tipografía "pergamino" (Google Fonts) y el filtro sepia sobre el mapa
+     necesitan conexión a internet normal para cargar bien — en la vista previa de
+     Claude puede no cargar la fuente, pero en GitHub Pages sí. */
   :root{
-    --bg:#0f1115;
-    --panel:#181b22;
-    --panel2:#20242e;
-    --accent:#4da3ff;
-    --accent2:#ff5d5d;
-    --text:#e8eaed;
-    --muted:#8b93a1;
-    --border:#2a2f3a;
+    --bg:#cdb98a;
+    --panel:#3c2a1a;
+    --panel2:#4d3722;
+    --accent:#c9a227;
+    --accent2:#7a2020;
+    --text:#f2e6c8;
+    --muted:#d8c79b;
+    --border:#6b4f30;
   }
   *{box-sizing:border-box;}
-  html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:'IM Fell English',Georgia,'Times New Roman',serif;}
   #map{position:absolute;top:0;left:0;right:0;bottom:0;z-index:1;}
+  /* tiñe las teselas de OpenStreetMap a tono sepia/pergamino */
+  .leaflet-tile-pane{
+    filter: sepia(0.75) saturate(2.1) hue-rotate(-18deg) brightness(0.92) contrast(1.05);
+  }
+  /* viñeta de bordes envejecidos alrededor del mapa */
+  #map::after{
+    content:'';position:absolute;inset:0;pointer-events:none;z-index:400;
+    box-shadow: inset 0 0 10vw 3vw rgba(60,40,20,0.65);
+  }
+  h3, #modalTitle, #nameModal .box h3{font-family:'MedievalSharp',cursive;}
 
   #topbar{
     position:absolute;top:0;left:0;right:0;z-index:500;
@@ -110,7 +125,13 @@
   }
   #toast.show{opacity:1;}
 
-  .leaflet-container{background:#0f1115;}
+  .leaflet-container{background:var(--bg);}
+
+  .footstep-icon{background:none;border:none;}
+  .footstep-icon .footstep{
+    font-size:13px;opacity:0.85;
+    filter:sepia(1) saturate(3) hue-rotate(-15deg) brightness(0.6) drop-shadow(0 0 1px rgba(0,0,0,0.6));
+  }
 
   #nameModal{
     position:absolute;inset:0;z-index:1000;background:rgba(0,0,0,0.5);
@@ -210,21 +231,55 @@ let zonas = loadZones();
 
 /* Zonas sugeridas según notas de prensa (El Observador, ago-2023; InsightCrime/El País, nov-2024;
    El Observador feb-2023) sobre barrios con más homicidios/rapiñas o disputas de bandas en Montevideo.
-   Coordenadas son APROXIMADAS (centroide estimado del barrio, no un límite oficial) — ajustá el radio
-   o borrá/recreá la zona si te parece que no cubre bien la zona real. */
+   Al cargarlas, la app intenta traer el POLÍGONO REAL del barrio desde OpenStreetMap (Overpass API).
+   Si no lo encuentra, usa como respaldo un círculo aproximado (lat/lng/radius de abajo). */
 const PRESET_ZONES = [
-  { name:'Casavalle (prensa)', lat:-34.8273, lng:-56.1638, radius:700 },
-  { name:'La Paloma (prensa)', lat:-34.8220, lng:-56.1545, radius:600 },
-  { name:'Manga (prensa)', lat:-34.8080, lng:-56.1445, radius:800 },
-  { name:'Peñarol (prensa)', lat:-34.8345, lng:-56.2030, radius:700 },
-  { name:'Lavalleja, Peñarol (prensa)', lat:-34.8385, lng:-56.1995, radius:600 },
-  { name:'Villa Española (prensa)', lat:-34.8490, lng:-56.1520, radius:600 },
-  { name:'Malvín Norte (prensa)', lat:-34.8790, lng:-56.1160, radius:600 },
-  { name:'Norte del Cerro / Casabó (prensa)', lat:-34.8680, lng:-56.2870, radius:800 },
-  { name:'Cruz de Carrasco (prensa)', lat:-34.8490, lng:-56.0560, radius:600 },
-  { name:'Bañados de Carrasco (prensa)', lat:-34.8440, lng:-56.0660, radius:700 },
-  { name:'Marconi (prensa)', lat:-34.8330, lng:-56.1740, radius:500 },
+  { name:'Casavalle', lat:-34.8273, lng:-56.1638, radius:700 },
+  { name:'La Paloma', lat:-34.8220, lng:-56.1545, radius:600 },
+  { name:'Manga', lat:-34.8080, lng:-56.1445, radius:800 },
+  { name:'Peñarol', lat:-34.8345, lng:-56.2030, radius:700 },
+  { name:'Lavalleja', lat:-34.8385, lng:-56.1995, radius:600 },
+  { name:'Villa Española', lat:-34.8490, lng:-56.1520, radius:600 },
+  { name:'Malvín Norte', lat:-34.8790, lng:-56.1160, radius:600 },
+  { name:'Cerro', lat:-34.8680, lng:-56.2870, radius:900 },
+  { name:'Cruz de Carrasco', lat:-34.8490, lng:-56.0560, radius:600 },
+  { name:'Bañados de Carrasco', lat:-34.8440, lng:-56.0660, radius:700 },
+  { name:'Marconi', lat:-34.8330, lng:-56.1740, radius:500 },
 ];
+
+/* Busca el polígono real de uno o varios barrios de Montevideo en OpenStreetMap (Overpass API).
+   Devuelve un objeto { "NombreBarrio": [{lat,lng}, ...] } solo con los que encontró. */
+async function fetchBarrioPolygons(names){
+  const escaped = names.map(n=>n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+  const pattern = escaped.join('|');
+  const query = `[out:json][timeout:60][bbox:-34.95,-56.35,-34.75,-56.00];
+(
+  relation["name"~"^(${pattern})$",i]["boundary"="administrative"];
+  way["name"~"^(${pattern})$",i]["boundary"="administrative"];
+  relation["name"~"^(${pattern})$",i]["place"];
+  way["name"~"^(${pattern})$",i]["place"];
+);
+out geom;`;
+  const url = 'https://overpass-api.de/api/interpreter?data='+encodeURIComponent(query);
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('overpass no respondió');
+  const data = await res.json();
+  const result = {};
+  (data.elements||[]).forEach(el=>{
+    const name = el.tags && el.tags.name;
+    if(!name || result[name]) return;
+    if(el.type==='way' && el.geometry && el.geometry.length>2){
+      result[name] = el.geometry.map(p=>({lat:p.lat,lng:p.lon}));
+    } else if(el.type==='relation' && el.members){
+      const coords=[];
+      el.members.forEach(m=>{
+        if(m.role==='outer' && m.geometry){ m.geometry.forEach(p=>coords.push({lat:p.lat,lng:p.lon})); }
+      });
+      if(coords.length>2) result[name]=coords;
+    }
+  });
+  return result;
+}
 
 /* ---------- Utilidades geo ---------- */
 function toRad(d){ return d*Math.PI/180; }
@@ -248,6 +303,34 @@ function destPoint(start, bearingDeg, dist){
   const lat2=Math.asin(Math.sin(lat1)*Math.cos(dist/R)+Math.cos(lat1)*Math.sin(dist/R)*Math.cos(br));
   const lng2=lng1+Math.atan2(Math.sin(br)*Math.sin(dist/R)*Math.cos(lat1), Math.cos(dist/R)-Math.sin(lat1)*Math.sin(lat2));
   return { lat: toDeg(lat2), lng: toDeg(lng2) };
+}
+function pointInPolygon(point, poly){
+  let inside=false;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const xi=poly[i].lng, yi=poly[i].lat;
+    const xj=poly[j].lng, yj=poly[j].lat;
+    const intersect = ((yi>point.lat)!==(yj>point.lat)) &&
+      (point.lng < (xj-xi)*(point.lat-yi)/(yj-yi)+xi);
+    if(intersect) inside=!inside;
+  }
+  return inside;
+}
+function zoneCenter(zone){
+  if(zone.type==='polygon'){
+    let latSum=0,lngSum=0;
+    zone.coords.forEach(p=>{ latSum+=p.lat; lngSum+=p.lng; });
+    return { lat: latSum/zone.coords.length, lng: lngSum/zone.coords.length };
+  }
+  return { lat: zone.lat, lng: zone.lng };
+}
+function zoneRadius(zone){
+  if(zone.type==='polygon'){
+    const c = zoneCenter(zone);
+    let max=0;
+    zone.coords.forEach(p=>{ const d=haversine(c,p); if(d>max) max=d; });
+    return max;
+  }
+  return zone.radius;
 }
 function fmtDist(m){
   if(m<1000) return Math.round(m)+' m';
@@ -292,7 +375,7 @@ function onMapClick(e){
     document.getElementById('btnZone').classList.remove('on');
     openNameModal('Radio de la zona (metros)', '200', (val)=>{
       const radius = parseFloat(val) || 200;
-      const zone = { id: Date.now().toString(), lat: zonePendingCenter.lat, lng: zonePendingCenter.lng, radius, name: 'Zona a evitar' };
+      const zone = { id: Date.now().toString(), type:'circle', lat: zonePendingCenter.lat, lng: zonePendingCenter.lng, radius, name: 'Zona a evitar' };
       zonas.push(zone);
       saveZones(zonas);
       renderZones();
@@ -313,6 +396,7 @@ function initGeolocation(){
   navigator.geolocation.watchPosition(pos=>{
     myPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
     updateMyMarker(pos.coords.accuracy);
+    updateFootstepsProgress();
   }, err=>{
     toast('No se pudo obtener tu ubicación: '+err.message);
   }, { enableHighAccuracy:true, maximumAge:2000, timeout:15000 });
@@ -378,11 +462,16 @@ function deleteFavorite(id){
 function renderZones(){
   Object.values(zoneLayers).forEach(l=>map.removeLayer(l));
   zoneLayers = {};
+  const zoneStyle = { color:'#4a0f0f', weight:2, fillColor:'#7a1f1f', fillOpacity:0.32, dashArray:'5,4' };
   zonas.forEach(z=>{
-    const circle = L.circle([z.lat,z.lng], {
-      radius:z.radius, color:'#ff5d5d', weight:1.5, fillColor:'#ff5d5d', fillOpacity:0.18
-    }).addTo(map);
-    zoneLayers[z.id]=circle;
+    let layer;
+    if(z.type==='polygon'){
+      layer = L.polygon(z.coords.map(c=>[c.lat,c.lng]), zoneStyle).addTo(map);
+    } else {
+      layer = L.circle([z.lat,z.lng], { ...zoneStyle, radius:z.radius }).addTo(map);
+    }
+    layer.bindPopup(z.name);
+    zoneLayers[z.id]=layer;
   });
   const list = document.getElementById('zoneList');
   list.innerHTML='';
@@ -392,7 +481,8 @@ function renderZones(){
   zonas.forEach(z=>{
     const div=document.createElement('div');
     div.className='list-item';
-    div.innerHTML=`<div class="info"><span class="name">${z.name}</span><span class="sub">Radio ${Math.round(z.radius)} m</span></div>`;
+    const sub = z.type==='polygon' ? 'Límite real del barrio' : `Radio ${Math.round(z.radius)} m`;
+    div.innerHTML=`<div class="info"><span class="name">${z.name}</span><span class="sub">${sub}</span></div>`;
     const del=document.createElement('button');
     del.textContent='✕';
     del.onclick=()=> deleteZone(z.id);
@@ -465,6 +555,9 @@ async function fetchOSRM(waypoints, profile){
 }
 
 function routeIntersectsZone(coords, zone){
+  if(zone.type==='polygon'){
+    return coords.some(p=>pointInPolygon(p, zone.coords));
+  }
   for(const p of coords){
     if(haversine(p, {lat:zone.lat,lng:zone.lng}) < zone.radius) return true;
   }
@@ -485,13 +578,15 @@ function closestIndexToPoint(coords, point){
   return best;
 }
 function computeDetourPoint(coords, zone, side){
-  const idx = closestIndexToPoint(coords, {lat:zone.lat,lng:zone.lng});
+  const center = zoneCenter(zone);
+  const radius = zoneRadius(zone);
+  const idx = closestIndexToPoint(coords, center);
   const a = coords[Math.max(0,idx-3)];
   const b = coords[Math.min(coords.length-1, idx+3)];
   const localBearing = bearing(a,b);
   const offsetBearing = (localBearing + (side===0?90:-90) + 360) % 360;
-  const dist = zone.radius + 250;
-  return destPoint({lat:zone.lat,lng:zone.lng}, offsetBearing, dist);
+  const dist = radius + 250;
+  return destPoint(center, offsetBearing, dist);
 }
 
 async function calculateRoute(){
@@ -524,8 +619,10 @@ async function calculateRoute(){
 
 function drawRoute(route, warn){
   if(routeLine) map.removeLayer(routeLine);
-  routeLine = L.polyline(route.coords.map(c=>[c.lat,c.lng]), {color:'#4da3ff', weight:5, opacity:0.85}).addTo(map);
+  // línea guía tenue debajo de las huellas, tipo trazo de tinta desvaída
+  routeLine = L.polyline(route.coords.map(c=>[c.lat,c.lng]), {color:'#5a3a1a', weight:3, opacity:0.35, dashArray:'1,8'}).addTo(map);
   map.fitBounds(routeLine.getBounds(), {padding:[60,60]});
+  buildFootsteps(route);
 
   document.getElementById('routeInfo').classList.add('show');
   document.getElementById('routeDist').textContent = fmtDist(route.distance);
@@ -536,8 +633,68 @@ function drawRoute(route, warn){
 function clearRoute(){
   if(routeLine){ map.removeLayer(routeLine); routeLine=null; }
   if(destMarker){ map.removeLayer(destMarker); destMarker=null; }
+  clearFootsteps();
   destPos=null;
   document.getElementById('routeInfo').classList.remove('show');
+}
+
+/* ---------- Huellas de pasos (estilo Mapa del Merodeador) ---------- */
+let footstepMarkers = [];  // [{marker, cumDist, faded}]
+let routeCumDist = [];     // distancia acumulada paralela a routeCoordsRef
+let routeCoordsRef = null;
+
+function buildFootsteps(route){
+  clearFootsteps();
+  const coords = route.coords;
+  const cum=[0];
+  for(let i=1;i<coords.length;i++){
+    cum.push(cum[i-1] + haversine(coords[i-1], coords[i]));
+  }
+  const total = cum[cum.length-1];
+  const spacing = 16; // metros entre cada huella
+  let nextDist = spacing;
+  let side = 0;
+  let idx = 0;
+  while(nextDist < total){
+    while(idx < cum.length-2 && cum[idx+1] < nextDist) idx++;
+    const a = coords[idx], b = coords[idx+1];
+    const segLen = (cum[idx+1]-cum[idx]) || 1;
+    const t = (nextDist-cum[idx])/segLen;
+    const lat = a.lat + (b.lat-a.lat)*t;
+    const lng = a.lng + (b.lng-a.lng)*t;
+    const brg = bearing(a,b);
+    const p = destPoint({lat,lng}, brg + (side===0?90:-90), 2.2); // pequeño paso alternado a cada lado
+    const icon = L.divIcon({
+      className:'footstep-icon',
+      html:`<div class="footstep" style="transform:rotate(${brg}deg)">👣</div>`,
+      iconSize:[16,16], iconAnchor:[8,8]
+    });
+    const m = L.marker([p.lat,p.lng], {icon, interactive:false, zIndexOffset:100}).addTo(map);
+    footstepMarkers.push({ marker:m, cumDist:nextDist, faded:false });
+    side = 1-side;
+    nextDist += spacing;
+  }
+  routeCumDist = cum;
+  routeCoordsRef = coords;
+}
+function clearFootsteps(){
+  footstepMarkers.forEach(f=>map.removeLayer(f.marker));
+  footstepMarkers=[];
+  routeCumDist=[];
+  routeCoordsRef=null;
+}
+function updateFootstepsProgress(){
+  if(!myPos || footstepMarkers.length===0 || !routeCoordsRef) return;
+  const idx = closestIndexToPoint(routeCoordsRef, myPos);
+  const traveled = routeCumDist[idx] || 0;
+  footstepMarkers.forEach(f=>{
+    if(!f.faded && f.cumDist < traveled - 8){
+      f.faded = true;
+      const el = f.marker.getElement();
+      if(el){ el.style.transition='opacity 1.2s'; el.style.opacity='0'; }
+      setTimeout(()=>{ if(footstepMarkers.includes(f)) map.removeLayer(f.marker); }, 1300);
+    }
+  });
 }
 
 /* ---------- Eventos UI ---------- */
@@ -586,14 +743,28 @@ document.getElementById('sheetHandle').onclick=()=>{
 
 document.getElementById('btnClearRoute').onclick=clearRoute;
 
-document.getElementById('btnPreset').onclick=()=>{
-  const existingNames = new Set(zonas.map(z=>z.name));
-  const nuevas = PRESET_ZONES.filter(p=>!existingNames.has(p.name));
-  if(nuevas.length===0){ toast('Ya tenés cargadas todas las zonas sugeridas'); return; }
-  nuevas.forEach(p=> zonas.push({ id: 'preset-'+p.name, lat:p.lat, lng:p.lng, radius:p.radius, name:p.name }));
+document.getElementById('btnPreset').onclick=async ()=>{
+  const existingPresets = new Set(zonas.map(z=>z.presetName).filter(Boolean));
+  const faltantes = PRESET_ZONES.filter(p=>!existingPresets.has(p.name));
+  if(faltantes.length===0){ toast('Ya tenés cargadas todas las zonas sugeridas'); return; }
+  toast('Buscando los límites reales de los barrios...');
+  let polygons = {};
+  try{
+    polygons = await fetchBarrioPolygons(faltantes.map(f=>f.name));
+  }catch(e){
+    toast('No pude traer los límites reales, uso zonas aproximadas');
+  }
+  faltantes.forEach(p=>{
+    const poly = polygons[p.name];
+    if(poly && poly.length>2){
+      zonas.push({ id:'preset-'+p.name, type:'polygon', coords:poly, name:p.name, presetName:p.name });
+    } else {
+      zonas.push({ id:'preset-'+p.name, type:'circle', lat:p.lat, lng:p.lng, radius:p.radius, name:p.name+' (aprox.)', presetName:p.name });
+    }
+  });
   saveZones(zonas);
   renderZones();
-  toast(nuevas.length+' zonas sugeridas agregadas (revisalas y ajustalas si hace falta)');
+  toast(faltantes.length+' zonas cargadas (revisalas y ajustalas si hace falta)');
 };
 
 /* ---------- Arranque ---------- */
