@@ -235,58 +235,64 @@ let zonas = loadZones();
    El Observador feb-2023) sobre barrios con más homicidios/rapiñas o disputas de bandas en Montevideo.
    Al cargarlas, la app intenta traer el POLÍGONO REAL del barrio desde OpenStreetMap (Overpass API).
    Si no lo encuentra, usa como respaldo un círculo aproximado (lat/lng/radius de abajo). */
-const PRESET_ZONES = [
+
+  const PRESET_ZONES = [
   {
     name: 'Casavalle',
     type: 'polygon',
     coords: [
-      {lat: -34.8152, lng: -56.1750}, {lat: -34.8180, lng: -56.1520},
-      {lat: -34.8380, lng: -56.1550}, {lat: -34.8350, lng: -56.1820}
+      {lat: -34.8095, lng: -56.1685}, {lat: -34.8150, lng: -56.1510},
+      {lat: -34.8250, lng: -56.1480}, {lat: -34.8385, lng: -56.1530},
+      {lat: -34.8410, lng: -56.1650}, {lat: -34.8320, lng: -56.1790},
+      {lat: -34.8210, lng: -56.1810}
     ]
   },
   {
     name: 'Peñarol',
     type: 'polygon',
     coords: [
-      {lat: -34.8250, lng: -56.2150}, {lat: -34.8280, lng: -56.1920},
-      {lat: -34.8420, lng: -56.1980}, {lat: -34.8390, lng: -56.2200}
+      {lat: -34.8210, lng: -56.2180}, {lat: -34.8250, lng: -56.1950},
+      {lat: -34.8330, lng: -56.1910}, {lat: -34.8420, lng: -56.1980},
+      {lat: -34.8400, lng: -56.2120}, {lat: -34.8310, lng: -56.2230}
     ]
   },
   {
     name: 'Manga',
     type: 'polygon',
     coords: [
-      {lat: -34.7980, lng: -56.1580}, {lat: -34.8020, lng: -56.1300},
-      {lat: -34.8180, lng: -56.1350}, {lat: -34.8150, lng: -56.1620}
+      {lat: -34.7890, lng: -56.1620}, {lat: -34.7950, lng: -56.1280},
+      {lat: -34.8120, lng: -56.1320}, {lat: -34.8200, lng: -56.1550},
+      {lat: -34.8080, lng: -56.1680}
     ]
   },
   {
     name: 'Cerro',
     type: 'polygon',
     coords: [
-      {lat: -34.8580, lng: -56.2980}, {lat: -34.8600, lng: -56.2680},
-      {lat: -34.8780, lng: -56.2720}, {lat: -34.8750, lng: -56.3020}
+      {lat: -34.8520, lng: -56.2920}, {lat: -34.8580, lng: -56.2620},
+      {lat: -34.8710, lng: -56.2580}, {lat: -34.8820, lng: -56.2680},
+      {lat: -34.8800, lng: -56.2950}, {lat: -34.8650, lng: -56.3050}
     ]
   },
   {
     name: 'La Paloma',
     type: 'polygon',
     coords: [
-      {lat: -34.8150, lng: -56.1620}, {lat: -34.8170, lng: -56.1480},
-      {lat: -34.8280, lng: -56.1500}, {lat: -34.8260, lng: -56.1650}
+      {lat: -34.8120, lng: -56.1650}, {lat: -34.8160, lng: -56.1450},
+      {lat: -34.8290, lng: -56.1480}, {lat: -34.8270, lng: -56.1680}
     ]
   },
   {
     name: 'Malvín Norte',
     type: 'polygon',
     coords: [
-      {lat: -34.8700, lng: -56.1280}, {lat: -34.8720, lng: -56.1050},
-      {lat: -34.8880, lng: -56.1100}, {lat: -34.8850, lng: -56.1320}
+      {lat: -34.8680, lng: -56.1320}, {lat: -34.8710, lng: -56.1020},
+      {lat: -34.8820, lng: -56.1060}, {lat: -34.8890, lng: -56.1150},
+      {lat: -34.8840, lng: -56.1350}
     ]
   }
 ];
-  
-/* Busca el polígono real de uno o varios barrios de Montevideo en OpenStreetMap (Overpass API).
+  /* Busca el polígono real de uno o varios barrios de Montevideo en OpenStreetMap (Overpass API).
    Devuelve un objeto { "NombreBarrio": [{lat,lng}, ...] } solo con los que encontró. */
 async function fetchBarrioPolygons(names){
   const escaped = names.map(n=>n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
