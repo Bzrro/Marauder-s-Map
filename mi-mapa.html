@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Mi Mapa</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+  :root{
+    --bg:#0f1115;
+    --panel:#181b22;
+    --panel2:#20242e;
+    --accent:#4da3ff;
+    --accent2:#ff5d5d;
+    --text:#e8eaed;
+    --muted:#8b93a1;
+    --border:#2a2f3a;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  #map{position:absolute;top:0;left:0;right:0;bottom:0;z-index:1;}
+
+  #topbar{
+    position:absolute;top:0;left:0;right:0;z-index:500;
+    padding:10px;display:flex;gap:8px;
+    background:linear-gradient(180deg,rgba(15,17,21,0.95),rgba(15,17,21,0));
+    pointer-events:none;
+  }
+  #topbar > *{pointer-events:auto;}
+  #search{
+    flex:1;padding:12px 14px;border-radius:14px;border:1px solid var(--border);
+    background:var(--panel);color:var(--text);font-size:15px;outline:none;
+  }
+  #search::placeholder{color:var(--muted);}
+  #goBtn{
+    padding:0 16px;border-radius:14px;border:none;background:var(--accent);
+    color:#08131f;font-weight:600;font-size:15px;
+  }
+
+  #modeBar{
+    position:absolute;top:60px;left:10px;right:10px;z-index:500;
+    display:flex;gap:6px;pointer-events:none;
+  }
+  #modeBar > *{pointer-events:auto;}
+  .mode-btn{
+    padding:8px 12px;border-radius:20px;border:1px solid var(--border);
+    background:var(--panel);color:var(--muted);font-size:13px;
+  }
+  .mode-btn.active{background:var(--accent);color:#08131f;border-color:var(--accent);font-weight:600;}
+
+  #fabs{
+    position:absolute;right:10px;bottom:90px;z-index:500;
+    display:flex;flex-direction:column;gap:10px;
+  }
+  .fab{
+    width:50px;height:50px;border-radius:50%;border:1px solid var(--border);
+    background:var(--panel);color:var(--text);font-size:20px;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 4px 14px rgba(0,0,0,0.4);
+  }
+  .fab.danger{background:var(--accent2);color:#2a0505;border-color:var(--accent2);}
+  .fab.on{background:var(--accent);color:#08131f;border-color:var(--accent);}
+
+  #bottomSheet{
+    position:absolute;left:0;right:0;bottom:0;z-index:600;
+    background:var(--panel);border-top:1px solid var(--border);
+    border-radius:18px 18px 0 0;
+    max-height:60vh;overflow-y:auto;
+    transform:translateY(100%);transition:transform .25s ease;
+  }
+  #bottomSheet.open{transform:translateY(0);}
+  #sheetHandle{
+    display:flex;justify-content:center;padding:8px 0 2px;
+  }
+  #sheetHandle span{width:36px;height:4px;border-radius:2px;background:var(--border);}
+  #sheetContent{padding:6px 16px 20px;}
+  #sheetContent h3{margin:8px 0;font-size:15px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em;}
+  .list-item{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 12px;background:var(--panel2);border-radius:12px;margin-bottom:8px;
+  }
+  .list-item .info{display:flex;flex-direction:column;gap:2px;}
+  .list-item .name{font-size:14px;font-weight:600;}
+  .list-item .sub{font-size:12px;color:var(--muted);}
+  .list-item button{
+    background:none;border:none;color:var(--accent2);font-size:18px;padding:4px 8px;
+  }
+  .empty-msg{color:var(--muted);font-size:13px;padding:8px 0 16px;}
+
+  #routeInfo{
+    position:absolute;left:10px;right:10px;bottom:10px;z-index:500;
+    background:var(--panel);border:1px solid var(--border);border-radius:14px;
+    padding:12px 14px;display:none;align-items:center;justify-content:space-between;
+    box-shadow:0 4px 14px rgba(0,0,0,0.4);
+  }
+  #routeInfo.show{display:flex;}
+  #routeInfo .txt{font-size:14px;}
+  #routeInfo .txt b{font-size:16px;}
+  #routeInfo .warn{color:#ffb84d;font-size:12px;display:block;margin-top:2px;}
+  #routeInfo button{
+    background:var(--panel2);border:1px solid var(--border);color:var(--text);
+    border-radius:10px;padding:8px 12px;font-size:13px;
+  }
+
+  #toast{
+    position:absolute;left:50%;top:14px;transform:translateX(-50%);
+    background:var(--panel2);border:1px solid var(--border);
+    padding:10px 16px;border-radius:10px;font-size:13px;z-index:900;
+    opacity:0;pointer-events:none;transition:opacity .25s;
+  }
+  #toast.show{opacity:1;}
+
+  .leaflet-container{background:#0f1115;}
+
+  #nameModal{
+    position:absolute;inset:0;z-index:1000;background:rgba(0,0,0,0.5);
+    display:none;align-items:center;justify-content:center;
+  }
+  #nameModal.show{display:flex;}
+  #nameModal .box{
+    background:var(--panel);border:1px solid var(--border);border-radius:16px;
+    padding:20px;width:85%;max-width:340px;
+  }
+  #nameModal h3{margin:0 0 12px;font-size:16px;}
+  #nameModal input{
+    width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);
+    background:var(--panel2);color:var(--text);font-size:14px;margin-bottom:12px;
+  }
+  #nameModal .row{display:flex;gap:8px;justify-content:flex-end;}
+  #nameModal button{padding:9px 16px;border-radius:10px;border:none;font-size:14px;}
+  #nameModal .cancel{background:var(--panel2);color:var(--muted);}
+  #nameModal .ok{background:var(--accent);color:#08131f;font-weight:600;}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="topbar">
+  <input id="search" type="text" placeholder="Buscar destino..." />
+  <button id="goBtn">Ir</button>
+</div>
+
+<div id="modeBar">
+  <button class="mode-btn active" data-profile="foot">🚶 A pie</button>
+  <button class="mode-btn" data-profile="bike">🚲 Bici</button>
+  <button class="mode-btn" data-profile="driving">🚗 Auto</button>
+</div>
+
+<div id="fabs">
+  <button class="fab" id="btnLocate" title="Mi ubicación">📍</button>
+  <button class="fab" id="btnFavorite" title="Guardar lugar">⭐</button>
+  <button class="fab danger" id="btnZone" title="Marcar zona a evitar">⛔</button>
+  <button class="fab" id="btnList" title="Lugares y zonas">📋</button>
+  <button class="fab" id="btnPreset" title="Cargar zonas sugeridas">📰</button>
+</div>
+
+<div id="routeInfo">
+  <div class="txt">
+    <b id="routeDist">--</b> · <span id="routeDur">--</span>
+    <span class="warn" id="routeWarn" style="display:none;">⚠️ No se pudo evitar del todo una zona marcada</span>
+  </div>
+  <button id="btnClearRoute">Cancelar</button>
+</div>
+
+<div id="bottomSheet">
+  <div id="sheetHandle"><span></span></div>
+  <div id="sheetContent">
+    <h3>Lugares favoritos</h3>
+    <div id="favList"></div>
+    <h3>Zonas a evitar</h3>
+    <div id="zoneList"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<div id="nameModal">
+  <div class="box">
+    <h3 id="modalTitle">Nombre del lugar</h3>
+    <input id="modalInput" type="text" placeholder="Ej: Casa, Trabajo..." />
+    <div class="row">
+      <button class="cancel" id="modalCancel">Cancelar</button>
+      <button class="ok" id="modalOk">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+/* ---------- Estado ---------- */
+let map, myMarker, myAccCircle, destMarker, routeLine, zoneLayers = {};
+let myPos = null;              // {lat,lng}
+let destPos = null;            // {lat,lng}
+let currentProfile = 'foot';
+let placingZone = false;
+let zonePendingCenter = null;
+let pendingAction = null;      // 'favorite' | 'zone-radius'
+
+const STORAGE_KEY_FAV = 'mimapa_favoritos';
+const STORAGE_KEY_ZONES = 'mimapa_zonas';
+
+function loadFavs(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY_FAV)) || []; }catch(e){ return []; } }
+function saveFavs(list){ localStorage.setItem(STORAGE_KEY_FAV, JSON.stringify(list)); }
+function loadZones(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY_ZONES)) || []; }catch(e){ return []; } }
+function saveZones(list){ localStorage.setItem(STORAGE_KEY_ZONES, JSON.stringify(list)); }
+
+let favoritos = loadFavs();
+let zonas = loadZones();
+
+/* Zonas sugeridas según notas de prensa (El Observador, ago-2023; InsightCrime/El País, nov-2024;
+   El Observador feb-2023) sobre barrios con más homicidios/rapiñas o disputas de bandas en Montevideo.
+   Coordenadas son APROXIMADAS (centroide estimado del barrio, no un límite oficial) — ajustá el radio
+   o borrá/recreá la zona si te parece que no cubre bien la zona real. */
+const PRESET_ZONES = [
+  { name:'Casavalle (prensa)', lat:-34.8273, lng:-56.1638, radius:700 },
+  { name:'La Paloma (prensa)', lat:-34.8220, lng:-56.1545, radius:600 },
+  { name:'Manga (prensa)', lat:-34.8080, lng:-56.1445, radius:800 },
+  { name:'Peñarol (prensa)', lat:-34.8345, lng:-56.2030, radius:700 },
+  { name:'Lavalleja, Peñarol (prensa)', lat:-34.8385, lng:-56.1995, radius:600 },
+  { name:'Villa Española (prensa)', lat:-34.8490, lng:-56.1520, radius:600 },
+  { name:'Malvín Norte (prensa)', lat:-34.8790, lng:-56.1160, radius:600 },
+  { name:'Norte del Cerro / Casabó (prensa)', lat:-34.8680, lng:-56.2870, radius:800 },
+  { name:'Cruz de Carrasco (prensa)', lat:-34.8490, lng:-56.0560, radius:600 },
+  { name:'Bañados de Carrasco (prensa)', lat:-34.8440, lng:-56.0660, radius:700 },
+  { name:'Marconi (prensa)', lat:-34.8330, lng:-56.1740, radius:500 },
+];
+
+/* ---------- Utilidades geo ---------- */
+function toRad(d){ return d*Math.PI/180; }
+function toDeg(r){ return r*180/Math.PI; }
+
+function haversine(a,b){
+  const R=6371000;
+  const dLat=toRad(b.lat-a.lat), dLng=toRad(b.lng-a.lng);
+  const s=Math.sin(dLat/2)**2 + Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(s));
+}
+function bearing(a,b){
+  const y=Math.sin(toRad(b.lng-a.lng))*Math.cos(toRad(b.lat));
+  const x=Math.cos(toRad(a.lat))*Math.sin(toRad(b.lat)) - Math.sin(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.cos(toRad(b.lng-a.lng));
+  return (toDeg(Math.atan2(y,x))+360)%360;
+}
+function destPoint(start, bearingDeg, dist){
+  const R=6371000;
+  const br=toRad(bearingDeg);
+  const lat1=toRad(start.lat), lng1=toRad(start.lng);
+  const lat2=Math.asin(Math.sin(lat1)*Math.cos(dist/R)+Math.cos(lat1)*Math.sin(dist/R)*Math.cos(br));
+  const lng2=lng1+Math.atan2(Math.sin(br)*Math.sin(dist/R)*Math.cos(lat1), Math.cos(dist/R)-Math.sin(lat1)*Math.sin(lat2));
+  return { lat: toDeg(lat2), lng: toDeg(lng2) };
+}
+function fmtDist(m){
+  if(m<1000) return Math.round(m)+' m';
+  return (m/1000).toFixed(1)+' km';
+}
+function fmtDur(s){
+  const min=Math.round(s/60);
+  if(min<60) return min+' min';
+  const h=Math.floor(min/60), m=min%60;
+  return h+'h '+m+'min';
+}
+
+/* ---------- Toast ---------- */
+let toastTimer;
+function toast(msg){
+  const el=document.getElementById('toast');
+  el.textContent=msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>el.classList.remove('show'), 2600);
+}
+
+/* ---------- Mapa ---------- */
+function initMap(){
+  map = L.map('map', { zoomControl:false }).setView([-34.9011, -56.1645], 14); // Montevideo por defecto
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom:19,
+    attribution:'&copy; OpenStreetMap'
+  }).addTo(map);
+  L.control.zoom({position:'bottomleft'}).addTo(map);
+
+  map.on('click', onMapClick);
+
+  renderFavorites();
+  renderZones();
+}
+
+function onMapClick(e){
+  if(placingZone){
+    zonePendingCenter = { lat: e.latlng.lat, lng: e.latlng.lng };
+    placingZone = false;
+    document.getElementById('btnZone').classList.remove('on');
+    openNameModal('Radio de la zona (metros)', '200', (val)=>{
+      const radius = parseFloat(val) || 200;
+      const zone = { id: Date.now().toString(), lat: zonePendingCenter.lat, lng: zonePendingCenter.lng, radius, name: 'Zona a evitar' };
+      zonas.push(zone);
+      saveZones(zonas);
+      renderZones();
+      toast('Zona marcada para evitar');
+    });
+    return;
+  }
+  // click normal: fija destino
+  setDestination(e.latlng.lat, e.latlng.lng, 'Destino');
+}
+
+/* ---------- Ubicación en vivo ---------- */
+function initGeolocation(){
+  if(!navigator.geolocation){
+    toast('Este navegador no soporta geolocalización');
+    return;
+  }
+  navigator.geolocation.watchPosition(pos=>{
+    myPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    updateMyMarker(pos.coords.accuracy);
+  }, err=>{
+    toast('No se pudo obtener tu ubicación: '+err.message);
+  }, { enableHighAccuracy:true, maximumAge:2000, timeout:15000 });
+}
+
+function updateMyMarker(accuracy){
+  if(!myMarker){
+    const icon = L.divIcon({
+      className:'',
+      html:'<div style="width:16px;height:16px;border-radius:50%;background:#4da3ff;border:3px solid #fff;box-shadow:0 0 0 2px rgba(77,163,255,0.4);"></div>',
+      iconSize:[16,16], iconAnchor:[8,8]
+    });
+    myMarker = L.marker([myPos.lat,myPos.lng], {icon, zIndexOffset:1000}).addTo(map);
+    map.setView([myPos.lat,myPos.lng], 16);
+  } else {
+    myMarker.setLatLng([myPos.lat,myPos.lng]);
+  }
+  if(accuracy){
+    if(!myAccCircle){
+      myAccCircle = L.circle([myPos.lat,myPos.lng], {radius:accuracy, color:'#4da3ff', weight:1, fillOpacity:0.08}).addTo(map);
+    } else {
+      myAccCircle.setLatLng([myPos.lat,myPos.lng]);
+      myAccCircle.setRadius(accuracy);
+    }
+  }
+}
+
+/* ---------- Favoritos ---------- */
+function renderFavorites(){
+  // limpiar marcadores previos
+  favoritos.forEach(f=>{
+    if(f._marker) map.removeLayer(f._marker);
+    const m = L.marker([f.lat,f.lng], { title:f.name }).addTo(map).bindPopup(f.name);
+    m.on('click', ()=> setDestination(f.lat, f.lng, f.name));
+    f._marker = m;
+  });
+  const list = document.getElementById('favList');
+  list.innerHTML='';
+  if(favoritos.length===0){
+    list.innerHTML='<div class="empty-msg">Todavía no guardaste lugares.</div>';
+  }
+  favoritos.forEach(f=>{
+    const div=document.createElement('div');
+    div.className='list-item';
+    div.innerHTML=`<div class="info"><span class="name">${f.name}</span><span class="sub">Tocá para ir</span></div>`;
+    const del=document.createElement('button');
+    del.textContent='✕';
+    del.onclick=(ev)=>{ ev.stopPropagation(); deleteFavorite(f.id); };
+    div.appendChild(del);
+    div.onclick=()=> setDestination(f.lat, f.lng, f.name);
+    list.appendChild(div);
+  });
+}
+function deleteFavorite(id){
+  const f = favoritos.find(x=>x.id===id);
+  if(f && f._marker) map.removeLayer(f._marker);
+  favoritos = favoritos.filter(x=>x.id!==id);
+  saveFavs(favoritos.map(({_marker, ...rest})=>rest));
+  renderFavorites();
+}
+
+/* ---------- Zonas a evitar ---------- */
+function renderZones(){
+  Object.values(zoneLayers).forEach(l=>map.removeLayer(l));
+  zoneLayers = {};
+  zonas.forEach(z=>{
+    const circle = L.circle([z.lat,z.lng], {
+      radius:z.radius, color:'#ff5d5d', weight:1.5, fillColor:'#ff5d5d', fillOpacity:0.18
+    }).addTo(map);
+    zoneLayers[z.id]=circle;
+  });
+  const list = document.getElementById('zoneList');
+  list.innerHTML='';
+  if(zonas.length===0){
+    list.innerHTML='<div class="empty-msg">No marcaste zonas a evitar.</div>';
+  }
+  zonas.forEach(z=>{
+    const div=document.createElement('div');
+    div.className='list-item';
+    div.innerHTML=`<div class="info"><span class="name">${z.name}</span><span class="sub">Radio ${Math.round(z.radius)} m</span></div>`;
+    const del=document.createElement('button');
+    del.textContent='✕';
+    del.onclick=()=> deleteZone(z.id);
+    div.appendChild(del);
+    list.appendChild(div);
+  });
+}
+function deleteZone(id){
+  zonas = zonas.filter(z=>z.id!==id);
+  saveZones(zonas);
+  renderZones();
+  toast('Zona eliminada');
+}
+
+/* ---------- Modal de nombre/valor ---------- */
+function openNameModal(title, placeholder, onOk){
+  const modal=document.getElementById('nameModal');
+  document.getElementById('modalTitle').textContent=title;
+  const input=document.getElementById('modalInput');
+  input.value='';
+  input.placeholder=placeholder;
+  modal.classList.add('show');
+  input.focus();
+  const ok=document.getElementById('modalOk');
+  const cancel=document.getElementById('modalCancel');
+  function cleanup(){
+    modal.classList.remove('show');
+    ok.onclick=null; cancel.onclick=null;
+  }
+  ok.onclick=()=>{ const v=input.value.trim(); cleanup(); if(v) onOk(v); };
+  cancel.onclick=()=> cleanup();
+}
+
+/* ---------- Buscar destino (Nominatim) ---------- */
+async function searchPlace(query){
+  if(!query.trim()) return;
+  try{
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if(data.length===0){ toast('No encontré ese lugar'); return; }
+    const r=data[0];
+    setDestination(parseFloat(r.lat), parseFloat(r.lon), r.display_name.split(',')[0]);
+  }catch(e){
+    toast('Error buscando el lugar');
+  }
+}
+
+/* ---------- Destino y ruta ---------- */
+function setDestination(lat,lng,name){
+  destPos = {lat,lng};
+  if(destMarker) map.removeLayer(destMarker);
+  destMarker = L.marker([lat,lng], {title:name}).addTo(map).bindPopup(name).openPopup();
+  if(!myPos){ toast('Esperando tu ubicación...'); return; }
+  calculateRoute();
+}
+
+async function fetchOSRM(waypoints, profile){
+  const coords = waypoints.map(p=>`${p.lng},${p.lat}`).join(';');
+  const url = `https://router.project-osrm.org/route/v1/${profile}/${coords}?overview=full&geometries=geojson`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if(data.code!=='Ok') throw new Error('sin ruta');
+  const route = data.routes[0];
+  return {
+    coords: route.geometry.coordinates.map(c=>({lat:c[1], lng:c[0]})),
+    distance: route.distance,
+    duration: route.duration
+  };
+}
+
+function routeIntersectsZone(coords, zone){
+  for(const p of coords){
+    if(haversine(p, {lat:zone.lat,lng:zone.lng}) < zone.radius) return true;
+  }
+  return false;
+}
+function firstIntersectingZone(coords){
+  for(const z of zonas){
+    if(routeIntersectsZone(coords, z)) return z;
+  }
+  return null;
+}
+function closestIndexToPoint(coords, point){
+  let best=0, bestD=Infinity;
+  coords.forEach((c,i)=>{
+    const d=haversine(c,point);
+    if(d<bestD){ bestD=d; best=i; }
+  });
+  return best;
+}
+function computeDetourPoint(coords, zone, side){
+  const idx = closestIndexToPoint(coords, {lat:zone.lat,lng:zone.lng});
+  const a = coords[Math.max(0,idx-3)];
+  const b = coords[Math.min(coords.length-1, idx+3)];
+  const localBearing = bearing(a,b);
+  const offsetBearing = (localBearing + (side===0?90:-90) + 360) % 360;
+  const dist = zone.radius + 250;
+  return destPoint({lat:zone.lat,lng:zone.lng}, offsetBearing, dist);
+}
+
+async function calculateRoute(){
+  if(!myPos || !destPos) return;
+  toast('Calculando ruta...');
+  let waypoints = [myPos, destPos];
+  let route;
+  try{
+    route = await fetchOSRM(waypoints, currentProfile);
+  }catch(e){
+    toast('No pude calcular la ruta para ese modo/lugar');
+    return;
+  }
+
+  let attempts=0, warn=false;
+  while(attempts<4){
+    const zone = firstIntersectingZone(route.coords);
+    if(!zone) break;
+    const via = computeDetourPoint(route.coords, zone, attempts%2);
+    waypoints.splice(waypoints.length-1, 0, via);
+    try{
+      route = await fetchOSRM(waypoints, currentProfile);
+    }catch(e){ break; }
+    attempts++;
+  }
+  if(firstIntersectingZone(route.coords)) warn=true;
+
+  drawRoute(route, warn);
+}
+
+function drawRoute(route, warn){
+  if(routeLine) map.removeLayer(routeLine);
+  routeLine = L.polyline(route.coords.map(c=>[c.lat,c.lng]), {color:'#4da3ff', weight:5, opacity:0.85}).addTo(map);
+  map.fitBounds(routeLine.getBounds(), {padding:[60,60]});
+
+  document.getElementById('routeInfo').classList.add('show');
+  document.getElementById('routeDist').textContent = fmtDist(route.distance);
+  document.getElementById('routeDur').textContent = fmtDur(route.duration);
+  document.getElementById('routeWarn').style.display = warn ? 'block' : 'none';
+}
+
+function clearRoute(){
+  if(routeLine){ map.removeLayer(routeLine); routeLine=null; }
+  if(destMarker){ map.removeLayer(destMarker); destMarker=null; }
+  destPos=null;
+  document.getElementById('routeInfo').classList.remove('show');
+}
+
+/* ---------- Eventos UI ---------- */
+document.getElementById('goBtn').onclick=()=> searchPlace(document.getElementById('search').value);
+document.getElementById('search').addEventListener('keydown', e=>{
+  if(e.key==='Enter') searchPlace(e.target.value);
+});
+
+document.querySelectorAll('.mode-btn').forEach(btn=>{
+  btn.onclick=()=>{
+    document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    currentProfile = btn.dataset.profile;
+    if(destPos) calculateRoute();
+  };
+});
+
+document.getElementById('btnLocate').onclick=()=>{
+  if(myPos) map.setView([myPos.lat,myPos.lng], 16);
+  else toast('Todavía no tengo tu ubicación');
+};
+
+document.getElementById('btnFavorite').onclick=()=>{
+  if(!myPos){ toast('Todavía no tengo tu ubicación'); return; }
+  openNameModal('Nombre del lugar', 'Ej: Casa, Trabajo...', (name)=>{
+    const fav = { id: Date.now().toString(), lat: myPos.lat, lng: myPos.lng, name };
+    favoritos.push(fav);
+    saveFavs(favoritos.map(({_marker, ...rest})=>rest));
+    renderFavorites();
+    toast('Lugar guardado: '+name);
+  });
+};
+
+document.getElementById('btnZone').onclick=(e)=>{
+  placingZone = !placingZone;
+  e.target.classList.toggle('on', placingZone);
+  toast(placingZone ? 'Tocá el mapa donde está la zona a evitar' : 'Cancelado');
+};
+
+document.getElementById('btnList').onclick=()=>{
+  document.getElementById('bottomSheet').classList.toggle('open');
+};
+document.getElementById('sheetHandle').onclick=()=>{
+  document.getElementById('bottomSheet').classList.remove('open');
+};
+
+document.getElementById('btnClearRoute').onclick=clearRoute;
+
+document.getElementById('btnPreset').onclick=()=>{
+  const existingNames = new Set(zonas.map(z=>z.name));
+  const nuevas = PRESET_ZONES.filter(p=>!existingNames.has(p.name));
+  if(nuevas.length===0){ toast('Ya tenés cargadas todas las zonas sugeridas'); return; }
+  nuevas.forEach(p=> zonas.push({ id: 'preset-'+p.name, lat:p.lat, lng:p.lng, radius:p.radius, name:p.name }));
+  saveZones(zonas);
+  renderZones();
+  toast(nuevas.length+' zonas sugeridas agregadas (revisalas y ajustalas si hace falta)');
+};
+
+/* ---------- Arranque ---------- */
+initMap();
+initGeolocation();
+</script>
+</body>
+</html>
