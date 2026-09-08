@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Mi Mapa</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -22,7 +22,7 @@
     --border:#6b4f30;
   }
   *{box-sizing:border-box;}
-  html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:'IM Fell English',Georgia,'Times New Roman',serif;}
+  html,body{height:100dvh;margin:0;background:var(--bg);color:var(--text);font-family:'IM Fell English',Georgia,'Times New Roman',serif;}
   #map{position:absolute;top:0;left:0;right:0;bottom:0;z-index:1;}
   /* tiñe las teselas de OpenStreetMap a tono sepia/pergamino */
   .leaflet-tile-pane{
@@ -64,7 +64,8 @@
   .mode-btn.active{background:var(--accent);color:#08131f;border-color:var(--accent);font-weight:600;}
 
   #fabs{
-    position:absolute;right:10px;bottom:90px;z-index:500;
+    position:absolute;right:10px;z-index:500;
+    bottom:calc(90px + env(safe-area-inset-bottom));
     display:flex;flex-direction:column;gap:10px;
   }
   .fab{
@@ -88,7 +89,7 @@
     display:flex;justify-content:center;padding:8px 0 2px;
   }
   #sheetHandle span{width:36px;height:4px;border-radius:2px;background:var(--border);}
-  #sheetContent{padding:6px 16px 20px;}
+  #sheetContent{padding:6px 16px calc(20px + env(safe-area-inset-bottom));}
   #sheetContent h3{margin:8px 0;font-size:15px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em;}
   .list-item{
     display:flex;align-items:center;justify-content:space-between;
@@ -103,7 +104,8 @@
   .empty-msg{color:var(--muted);font-size:13px;padding:8px 0 16px;}
 
   #routeInfo{
-    position:absolute;left:10px;right:10px;bottom:10px;z-index:500;
+    position:absolute;left:10px;right:10px;z-index:500;
+    bottom:calc(10px + env(safe-area-inset-bottom));
     background:var(--panel);border:1px solid var(--border);border-radius:14px;
     padding:12px 14px;display:none;align-items:center;justify-content:space-between;
     box-shadow:0 4px 14px rgba(0,0,0,0.4);
