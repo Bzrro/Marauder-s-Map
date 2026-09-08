@@ -236,19 +236,56 @@ let zonas = loadZones();
    Al cargarlas, la app intenta traer el POLÍGONO REAL del barrio desde OpenStreetMap (Overpass API).
    Si no lo encuentra, usa como respaldo un círculo aproximado (lat/lng/radius de abajo). */
 const PRESET_ZONES = [
-  { name:'Casavalle', lat:-34.8273, lng:-56.1638, radius:700 },
-  { name:'La Paloma', lat:-34.8220, lng:-56.1545, radius:600 },
-  { name:'Manga', lat:-34.8080, lng:-56.1445, radius:800 },
-  { name:'Peñarol', lat:-34.8345, lng:-56.2030, radius:700 },
-  { name:'Lavalleja', lat:-34.8385, lng:-56.1995, radius:600 },
-  { name:'Villa Española', lat:-34.8490, lng:-56.1520, radius:600 },
-  { name:'Malvín Norte', lat:-34.8790, lng:-56.1160, radius:600 },
-  { name:'Cerro', lat:-34.8680, lng:-56.2870, radius:900 },
-  { name:'Cruz de Carrasco', lat:-34.8490, lng:-56.0560, radius:600 },
-  { name:'Bañados de Carrasco', lat:-34.8440, lng:-56.0660, radius:700 },
-  { name:'Marconi', lat:-34.8330, lng:-56.1740, radius:500 },
+  {
+    name: 'Casavalle',
+    type: 'polygon',
+    coords: [
+      {lat: -34.8152, lng: -56.1750}, {lat: -34.8180, lng: -56.1520},
+      {lat: -34.8380, lng: -56.1550}, {lat: -34.8350, lng: -56.1820}
+    ]
+  },
+  {
+    name: 'Peñarol',
+    type: 'polygon',
+    coords: [
+      {lat: -34.8250, lng: -56.2150}, {lat: -34.8280, lng: -56.1920},
+      {lat: -34.8420, lng: -56.1980}, {lat: -34.8390, lng: -56.2200}
+    ]
+  },
+  {
+    name: 'Manga',
+    type: 'polygon',
+    coords: [
+      {lat: -34.7980, lng: -56.1580}, {lat: -34.8020, lng: -56.1300},
+      {lat: -34.8180, lng: -56.1350}, {lat: -34.8150, lng: -56.1620}
+    ]
+  },
+  {
+    name: 'Cerro',
+    type: 'polygon',
+    coords: [
+      {lat: -34.8580, lng: -56.2980}, {lat: -34.8600, lng: -56.2680},
+      {lat: -34.8780, lng: -56.2720}, {lat: -34.8750, lng: -56.3020}
+    ]
+  },
+  {
+    name: 'La Paloma',
+    type: 'polygon',
+    coords: [
+      {lat: -34.8150, lng: -56.1620}, {lat: -34.8170, lng: -56.1480},
+      {lat: -34.8280, lng: -56.1500}, {lat: -34.8260, lng: -56.1650}
+    ]
+  },
+  {
+    name: 'Malvín Norte',
+    type: 'polygon',
+    coords: [
+      {lat: -34.8700, lng: -56.1280}, {lat: -34.8720, lng: -56.1050},
+      {lat: -34.8880, lng: -56.1100}, {lat: -34.8850, lng: -56.1320}
+    ]
+  }
 ];
-
+  
 /* Busca el polígono real de uno o varios barrios de Montevideo en OpenStreetMap (Overpass API).
    Devuelve un objeto { "NombreBarrio": [{lat,lng}, ...] } solo con los que encontró. */
 async function fetchBarrioPolygons(names){
@@ -744,29 +781,31 @@ document.getElementById('sheetHandle').onclick=()=>{
 };
 
 document.getElementById('btnClearRoute').onclick=clearRoute;
+document.getElementById('btnPreset').onclick = () => {
+  const existingNames = new Set(zonas.map(z => z.name));
+  let agregados = 0;
 
-document.getElementById('btnPreset').onclick=async ()=>{
-  const existingPresets = new Set(zonas.map(z=>z.presetName).filter(Boolean));
-  const faltantes = PRESET_ZONES.filter(p=>!existingPresets.has(p.name));
-  if(faltantes.length===0){ toast('Ya tenés cargadas todas las zonas sugeridas'); return; }
-  toast('Buscando los límites reales de los barrios...');
-  let polygons = {};
-  try{
-    polygons = await fetchBarrioPolygons(faltantes.map(f=>f.name));
-  }catch(e){
-    toast('No pude traer los límites reales, uso zonas aproximadas');
-  }
-  faltantes.forEach(p=>{
-    const poly = polygons[p.name];
-    if(poly && poly.length>2){
-      zonas.push({ id:'preset-'+p.name, type:'polygon', coords:poly, name:p.name, presetName:p.name });
-    } else {
-      zonas.push({ id:'preset-'+p.name, type:'circle', lat:p.lat, lng:p.lng, radius:p.radius, name:p.name+' (aprox.)', presetName:p.name });
+  PRESET_ZONES.forEach(p => {
+    if (!existingNames.has(p.name)) {
+      zonas.push({
+        id: 'preset-' + p.name,
+        type: 'polygon',
+        coords: p.coords,
+        name: p.name,
+        presetName: p.name
+      });
+      agregados++;
     }
   });
+
+  if (agregados === 0) {
+    toast('Ya tenés cargadas todas las zonas sugeridas');
+    return;
+  }
+
   saveZones(zonas);
   renderZones();
-  toast(faltantes.length+' zonas cargadas (revisalas y ajustalas si hace falta)');
+  toast(`Se cargaron ${agregados} zonas con contorno real`);
 };
 
 /* ---------- Arranque ---------- */
