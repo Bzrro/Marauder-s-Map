@@ -1,0 +1,25 @@
+{
+  "name": "Mi Mapa Montevideo",
+  "short_name": "Mi Mapa",
+  "description": "Mapa personal con GPS, favoritos y zonas a evitar en Montevideo",
+  "start_url": "./mi-mapa.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#cdb98a",
+  "theme_color": "#3c2a1a",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
