@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Mi Mapa</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IM+Fell+English&family=MedievalSharp&display=swap" rel="stylesheet">
+<style>
+  /* Nota: la tipografía "pergamino" (Google Fonts) y el filtro sepia sobre el mapa
+     necesitan conexión a internet normal para cargar bien — en la vista previa de
+     Claude puede no cargar la fuente, pero en GitHub Pages sí. */
+  :root{
+    --bg:#cdb98a;
+    --panel:#3c2a1a;
+    --panel2:#4d3722;
+    --accent:#c9a227;
+    --accent2:#7a2020;
+    --text:#f2e6c8;
+    --muted:#d8c79b;
+    --border:#6b4f30;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100dvh;margin:0;background:var(--bg);color:var(--text);font-family:'IM Fell English',Georgia,'Times New Roman',serif;}
+  #map{position:absolute;top:0;left:0;right:0;bottom:0;z-index:1;}
+  /* tiñe las teselas de OpenStreetMap a tono sepia/pergamino */
+  .leaflet-tile-pane{
+    filter: sepia(0.75) saturate(2.1) hue-rotate(-18deg) brightness(0.92) contrast(1.05);
+    transition: filter .4s ease;
+  }
+  /* modo "mapa normal": sin filtro sepia, colores reales de OpenStreetMap */
+  body.normal-map .leaflet-tile-pane{
+    filter:none;
+  }
+  /* viñeta de bordes envejecidos alrededor del mapa */
+  #map::after{
+    content:'';position:absolute;inset:0;pointer-events:none;z-index:400;
+    box-shadow: inset 0 0 10vw 3vw rgba(60,40,20,0.65);
+    transition: box-shadow .4s ease;
+  }
+  body.normal-map #map::after{
+    box-shadow:none;
+  }
+  h3, #modalTitle, #nameModal .box h3{font-family:'MedievalSharp',cursive;}
+
+  #topbar{
+    position:absolute;top:0;left:0;right:0;z-index:500;
+    padding:10px;display:flex;gap:8px;
+    background:linear-gradient(180deg,rgba(15,17,21,0.95),rgba(15,17,21,0));
+    pointer-events:none;
+  }
+  #topbar > *{pointer-events:auto;}
+  #search{
+    flex:1;padding:12px 14px;border-radius:14px;border:1px solid var(--border);
+    background:var(--panel);color:var(--text);font-size:15px;outline:none;
+  }
+  #search::placeholder{color:var(--muted);}
+  #goBtn{
+    padding:0 16px;border-radius:14px;border:none;background:var(--accent);
+    color:#08131f;font-weight:600;font-size:15px;
+  }
+
+  #modeBar{
+    position:absolute;top:60px;left:10px;right:10px;z-index:500;
+    display:flex;gap:6px;pointer-events:none;
+  }
+  #modeBar > *{pointer-events:auto;}
+  .mode-btn{
+    padding:8px 12px;border-radius:20px;border:1px solid var(--border);
+    background:var(--panel);color:var(--muted);font-size:13px;
+  }
+  .mode-btn.active{background:var(--accent);color:#08131f;border-color:var(--accent);font-weight:600;}
+
+  #fabs{
+    position:absolute;right:10px;z-index:500;
+    bottom:calc(90px + env(safe-area-inset-bottom));
+    display:flex;flex-direction:column;gap:10px;
+  }
+  .fab{
+    width:50px;height:50px;border-radius:50%;border:1px solid var(--border);
+    background:var(--panel);color:var(--text);font-size:20px;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 4px 14px rgba(0,0,0,0.4);
+  }
+  .fab.danger{background:var(--accent2);color:#2a0505;border-color:var(--accent2);}
+  .fab.on{background:var(--accent);color:#08131f;border-color:var(--accent);}
+
+  #bottomSheet{
+    position:absolute;left:0;right:0;bottom:0;z-index:600;
+    background:var(--panel);border-top:1px solid var(--border);
+    border-radius:18px 18px 0 0;
+    max-height:60vh;overflow-y:auto;
+    transform:translateY(100%);transition:transform .25s ease;
+  }
+  #bottomSheet.open{transform:translateY(0);}
+  #sheetHandle{
+    display:flex;justify-content:center;padding:8px 0 2px;
+  }
+  #sheetHandle span{width:36px;height:4px;border-radius:2px;background:var(--border);}
+  #sheetContent{padding:6px 16px calc(20px + env(safe-area-inset-bottom));}
+  #sheetContent h3{margin:8px 0;font-size:15px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em;}
+  .list-item{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 12px;background:var(--panel2);border-radius:12px;margin-bottom:8px;
+  }
+  .list-item .info{display:flex;flex-direction:column;gap:2px;}
+  .list-item .name{font-size:14px;font-weight:600;}
+  .list-item .sub{font-size:12px;color:var(--muted);}
+  .list-item button{
+    background:none;border:none;color:var(--accent2);font-size:18px;padding:4px 8px;
+  }
+  .empty-msg{color:var(--muted);font-size:13px;padding:8px 0 16px;}
+
+  #routeInfo{
+    position:absolute;left:10px;right:10px;z-index:500;
+    bottom:calc(10px + env(safe-area-inset-bottom));
+    background:var(--panel);border:1px solid var(--border);border-radius:14px;
+    padding:12px 14px;display:none;align-items:center;justify-content:space-between;
+    box-shadow:0 4px 14px rgba(0,0,0,0.4);
+  }
+  #routeInfo.show{display:flex;}
+  #routeInfo .txt{font-size:14px;}
+  #routeInfo .txt b{font-size:16px;}
+  #routeInfo .warn{color:#ffb84d;font-size:12px;display:block;margin-top:2px;}
+  #routeInfo button{
+    background:var(--panel2);border:1px solid var(--border);color:var(--text);
+    border-radius:10px;padding:8px 12px;font-size:13px;
+  }
+
+  #toast{
+    position:absolute;left:50%;top:14px;transform:translateX(-50%);
+    background:var(--panel2);border:1px solid var(--border);
+    padding:10px 16px;border-radius:10px;font-size:13px;z-index:900;
+    opacity:0;pointer-events:none;transition:opacity .25s;
+  }
+  #toast.show{opacity:1;}
+
+  .leaflet-container{background:var(--bg);}
+
+  .footstep-icon{background:none;border:none;}
+  .footstep-icon .footstep{
+    width:7px;height:7px;border-radius:50%;
+    background:var(--accent2);
+    box-shadow:0 0 0 2px rgba(255,255,255,0.5);
+  }
+
+  #nameModal{
+    position:absolute;inset:0;z-index:1000;background:rgba(0,0,0,0.5);
+    display:none;align-items:center;justify-content:center;
+  }
+  #nameModal.show{display:flex;}
+  #nameModal .box{
+    background:var(--panel);border:1px solid var(--border);border-radius:16px;
+    padding:20px;width:85%;max-width:340px;
+  }
+  #nameModal h3{margin:0 0 12px;font-size:16px;}
+  #nameModal input{
+    width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);
+    background:var(--panel2);color:var(--text);font-size:14px;margin-bottom:12px;
+  }
+  #nameModal .row{display:flex;gap:8px;justify-content:flex-end;}
+  #nameModal button{padding:9px 16px;border-radius:10px;border:none;font-size:14px;}
+  #nameModal .cancel{background:var(--panel2);color:var(--muted);}
+  #nameModal .ok{background:var(--accent);color:#08131f;font-weight:600;}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="topbar">
+  <input id="search" type="text" placeholder="Buscar destino..." />
+  <button id="goBtn">Ir</button>
+</div>
+
+<div id="modeBar">
+  <button class="mode-btn active" data-profile="foot">🚶 A pie</button>
+  <button class="mode-btn" data-profile="bike">🚲 Bici</button>
+  <button class="mode-btn" data-profile="driving">🚗 Auto</button>
+  <button class="mode-btn" id="btnToggleMap" title="Alternar mapa pergamino / normal" style="margin-left:auto;">🪄</button>
+</div>
+
+<div id="fabs">
+  <button class="fab" id="btnLocate" title="Mi ubicación">📍</button>
+  <button class="fab" id="btnSetOrigin" title="Marcar mi punto de partida a mano">📌</button>
+  <button class="fab" id="btnFavorite" title="Guardar lugar">⭐</button>
+  <button class="fab danger" id="btnZone" title="Marcar zona a evitar">⛔</button>
+  <button class="fab" id="btnList" title="Lugares y zonas">📋</button>
+  <button class="fab" id="btnPreset" title="Cargar zonas sugeridas">📰</button>
+</div>
+
+<div id="routeInfo">
+  <div class="txt">
+    <b id="routeDist">--</b> · <span id="routeDur">--</span>
+    <span class="warn" id="routeWarn" style="display:none;">⚠️ No se pudo evitar del todo una zona marcada</span>
+  </div>
+  <button id="btnClearRoute">Cancelar</button>
+</div>
+
+<div id="bottomSheet">
+  <div id="sheetHandle"><span></span></div>
+  <div id="sheetContent">
+    <h3>Lugares favoritos</h3>
+    <div id="favList"></div>
+    <h3>Zonas a evitar</h3>
+    <div id="zoneList"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<div id="nameModal">
+  <div class="box">
+    <h3 id="modalTitle">Nombre del lugar</h3>
+    <input id="modalInput" type="text" placeholder="Ej: Casa, Trabajo..." />
+    <div class="row">
+      <button class="cancel" id="modalCancel">Cancelar</button>
+      <button class="ok" id="modalOk">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+/* ---------- Estado ---------- */
+let map, myMarker, myAccCircle, destMarker, routeLine, zoneLayers = {};
+let myPos = null;              // {lat,lng}
+let destPos = null;            // {lat,lng}
+let currentProfile = 'foot';
+let placingZone = false;
+let zonePendingCenter = null;
+let placingOrigin = false;
+let pendingAction = null;      // 'favorite' | 'zone-radius'
+
+const STORAGE_KEY_FAV = 'mimapa_favoritos';
+const STORAGE_KEY_ZONES = 'mimapa_zonas';
+
+function loadFavs(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY_FAV)) || []; }catch(e){ return []; } }
+function saveFavs(list){ localStorage.setItem(STORAGE_KEY_FAV, JSON.stringify(list)); }
+function loadZones(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY_ZONES)) || []; }catch(e){ return []; } }
+function saveZones(list){ localStorage.setItem(STORAGE_KEY_ZONES, JSON.stringify(list)); }
+
+let favoritos = loadFavs();
+let zonas = loadZones();
+
+/* Zonas sugeridas según notas de prensa (El Observador, ago-2023; InsightCrime/El País, nov-2024)
+   sobre barrios con más homicidios/rapiñas o disputas de bandas en Montevideo.
+   Los contornos de abajo son los límites REALES y oficiales de cada barrio (fuente: INE,
+   Censo 2011 — dataset público https://github.com/vierja/geojson_montevideo), ya simplificados
+   y escritos acá mismo, sin depender de ninguna consulta a servidores externos en el momento de usar la app.
+   "Cruz de Carrasco" y "Marconi" no son barrios oficiales del INE (son sub-zonas conocidas dentro de barrios
+   más grandes), así que para esos dos quedan como círculo aproximado en vez de contorno real. */
+const BARRIO_POLIGONOS = {
+  "Bañados de Carrasco": [[-34.79236,-56.07030],[-34.79508,-56.06727],[-34.80708,-56.04666],[-34.80781,-56.04940],[-34.81163,-56.04994],[-34.81245,-56.05224],[-34.81178,-56.05524],[-34.81311,-56.05560],[-34.81611,-56.05278],[-34.81826,-56.05385],[-34.82209,-56.05209],[-34.82391,-56.05492],[-34.84269,-56.05480],[-34.84767,-56.05340],[-34.85016,-56.05447],[-34.85215,-56.05376],[-34.85812,-56.05626],[-34.85995,-56.05537],[-34.86161,-56.05768],[-34.86666,-56.05962],[-34.87023,-56.06963],[-34.86994,-56.08085],[-34.87230,-56.09436],[-34.86675,-56.09235],[-34.86600,-56.09824],[-34.86030,-56.09574],[-34.85993,-56.09675],[-34.85888,-56.09737],[-34.85843,-56.09934],[-34.85778,-56.09971],[-34.85778,-56.10271],[-34.85905,-56.10655],[-34.85822,-56.11039],[-34.85610,-56.11142],[-34.85594,-56.11235],[-34.85668,-56.11286],[-34.85595,-56.11412],[-34.85155,-56.11365],[-34.85100,-56.11521],[-34.84609,-56.11359],[-34.84641,-56.11255],[-34.84536,-56.11196],[-34.84211,-56.12368],[-34.84146,-56.12420],[-34.83411,-56.11159],[-34.83552,-56.10700],[-34.83314,-56.10542],[-34.83261,-56.10329],[-34.83155,-56.10323],[-34.83038,-56.10471],[-34.82705,-56.09877],[-34.82806,-56.09720],[-34.82624,-56.09393],[-34.82023,-56.07898],[-34.81966,-56.07917],[-34.81904,-56.08119],[-34.81783,-56.08138],[-34.81704,-56.08031],[-34.81562,-56.08155],[-34.81228,-56.08795],[-34.81121,-56.08836],[-34.80959,-56.08742],[-34.80358,-56.07569],[-34.79776,-56.08021],[-34.79236,-56.07030]],
+  "Manga": [[-34.81195,-56.16769],[-34.80887,-56.16450],[-34.80605,-56.14278],[-34.80088,-56.14393],[-34.79978,-56.13643],[-34.80043,-56.13637],[-34.79966,-56.13607],[-34.79865,-56.12743],[-34.80150,-56.12508],[-34.80201,-56.12609],[-34.80747,-56.12955],[-34.81041,-56.13238],[-34.81651,-56.13650],[-34.81889,-56.15676],[-34.82180,-56.15579],[-34.82375,-56.16888],[-34.82077,-56.16907],[-34.81195,-56.16769]],
+  "Peñarol - Lavalleja": [[-34.81283,-56.21989],[-34.81704,-56.21301],[-34.81367,-56.21073],[-34.80920,-56.20920],[-34.81655,-56.19625],[-34.81150,-56.19243],[-34.80763,-56.20092],[-34.80627,-56.19971],[-34.80237,-56.19463],[-34.80261,-56.19081],[-34.80222,-56.19024],[-34.80530,-56.18290],[-34.80608,-56.18282],[-34.80751,-56.18494],[-34.80870,-56.18567],[-34.80977,-56.18376],[-34.81135,-56.18345],[-34.81297,-56.18585],[-34.81395,-56.18538],[-34.81534,-56.18559],[-34.81896,-56.18781],[-34.82016,-56.18746],[-34.82135,-56.18783],[-34.82242,-56.18704],[-34.82326,-56.18528],[-34.82677,-56.18507],[-34.82828,-56.18229],[-34.82987,-56.18211],[-34.83333,-56.18348],[-34.83531,-56.18166],[-34.83730,-56.18123],[-34.83818,-56.18174],[-34.83810,-56.18266],[-34.83871,-56.18323],[-34.83982,-56.18271],[-34.84312,-56.18664],[-34.84555,-56.18700],[-34.84636,-56.18770],[-34.84705,-56.18913],[-34.84640,-56.19160],[-34.84719,-56.19363],[-34.84405,-56.19866],[-34.84167,-56.19624],[-34.83877,-56.20107],[-34.83493,-56.20088],[-34.82939,-56.21018],[-34.83105,-56.21408],[-34.82876,-56.21795],[-34.82741,-56.21657],[-34.82676,-56.21473],[-34.82425,-56.21901],[-34.82009,-56.21935],[-34.81958,-56.22022],[-34.81233,-56.22071],[-34.81283,-56.21989]],
+  "Casavalle": [[-34.81195,-56.16769],[-34.82077,-56.16907],[-34.82375,-56.16888],[-34.82180,-56.15579],[-34.82368,-56.15532],[-34.82321,-56.14770],[-34.82467,-56.14753],[-34.82475,-56.14879],[-34.82803,-56.14820],[-34.82873,-56.15461],[-34.83143,-56.15419],[-34.83380,-56.15174],[-34.83490,-56.16246],[-34.83726,-56.16240],[-34.83814,-56.16325],[-34.83889,-56.16839],[-34.83552,-56.16829],[-34.83574,-56.17044],[-34.83822,-56.16997],[-34.84801,-56.17613],[-34.84221,-56.18567],[-34.83982,-56.18271],[-34.83871,-56.18323],[-34.83810,-56.18266],[-34.83818,-56.18174],[-34.83730,-56.18123],[-34.83531,-56.18166],[-34.83333,-56.18348],[-34.82987,-56.18211],[-34.82828,-56.18229],[-34.82748,-56.18343],[-34.81195,-56.16769]],
+  "Casabó": [[-34.85164,-56.29030],[-34.87486,-56.28577],[-34.87232,-56.26708],[-34.88687,-56.26416],[-34.88916,-56.26504],[-34.89013,-56.26636],[-34.88940,-56.26282],[-34.88819,-56.26264],[-34.88715,-56.26023],[-34.88745,-56.25864],[-34.88915,-56.25862],[-34.88995,-56.25481],[-34.89548,-56.25368],[-34.89543,-56.25330],[-34.89693,-56.25342],[-34.89830,-56.25594],[-34.89947,-56.25506],[-34.90028,-56.25949],[-34.90245,-56.25738],[-34.90494,-56.25650],[-34.90610,-56.25846],[-34.90659,-56.26076],[-34.90543,-56.26093],[-34.90476,-56.26022],[-34.90343,-56.26145],[-34.90292,-56.26623],[-34.90008,-56.26941],[-34.89891,-56.27188],[-34.89974,-56.27348],[-34.90090,-56.27348],[-34.90223,-56.27475],[-34.90190,-56.27705],[-34.89973,-56.27810],[-34.89807,-56.27756],[-34.89657,-56.27879],[-34.89540,-56.28215],[-34.89688,-56.28534],[-34.90004,-56.28448],[-34.90019,-56.28855],[-34.89935,-56.29067],[-34.89637,-56.28853],[-34.89487,-56.28976],[-34.89619,-56.29260],[-34.89486,-56.29348],[-34.89352,-56.29701],[-34.89399,-56.30374],[-34.89548,-56.30429],[-34.89664,-56.30606],[-34.89847,-56.30678],[-34.89863,-56.30749],[-34.89746,-56.30748],[-34.89961,-56.31086],[-34.90093,-56.31158],[-34.90244,-56.30946],[-34.90360,-56.30911],[-34.90591,-56.31338],[-34.90508,-56.31532],[-34.90291,-56.31548],[-34.90208,-56.31495],[-34.90125,-56.31601],[-34.89726,-56.31846],[-34.88492,-56.33149],[-34.88372,-56.33396],[-34.88140,-56.33359],[-34.87890,-56.33552],[-34.87691,-56.33445],[-34.87409,-56.33567],[-34.87424,-56.33886],[-34.87224,-56.33938],[-34.87058,-56.34167],[-34.87122,-56.34645],[-34.86838,-56.34980],[-34.86771,-56.35192],[-34.86935,-56.35636],[-34.86804,-56.35414],[-34.86722,-56.35361],[-34.86613,-56.35379],[-34.86422,-56.35250],[-34.85985,-56.35231],[-34.85852,-56.35304],[-34.85646,-56.35248],[-34.85576,-56.35285],[-34.85356,-56.35141],[-34.85188,-56.34868],[-34.84335,-56.36556],[-34.82984,-56.35562],[-34.85794,-56.30082],[-34.85164,-56.29030]],
+  "La Paloma": [[-34.83811,-56.26528],[-34.84207,-56.26599],[-34.84339,-56.26550],[-34.84439,-56.26224],[-34.84674,-56.26043],[-34.84677,-56.25898],[-34.85199,-56.25781],[-34.85294,-56.25722],[-34.85322,-56.25612],[-34.85477,-56.25553],[-34.85457,-56.25375],[-34.85560,-56.25176],[-34.85407,-56.25006],[-34.85452,-56.24891],[-34.85630,-56.24834],[-34.85604,-56.24894],[-34.85654,-56.24967],[-34.85802,-56.24890],[-34.85858,-56.24670],[-34.85921,-56.24632],[-34.86185,-56.24782],[-34.86205,-56.24364],[-34.86328,-56.24293],[-34.86410,-56.24343],[-34.86588,-56.24320],[-34.86927,-56.24537],[-34.87055,-56.24788],[-34.87103,-56.24805],[-34.87137,-56.24738],[-34.87172,-56.24768],[-34.87237,-56.25273],[-34.87165,-56.25288],[-34.87238,-56.25293],[-34.87367,-56.26259],[-34.87411,-56.26291],[-34.87223,-56.26710],[-34.87486,-56.28577],[-34.85164,-56.29030],[-34.83622,-56.27240],[-34.83811,-56.26528]],
+  "Villa Española": [[-34.85757,-56.15332],[-34.85649,-56.15313],[-34.85770,-56.15023],[-34.85095,-56.14834],[-34.85337,-56.14442],[-34.85869,-56.14362],[-34.85943,-56.14298],[-34.85789,-56.14182],[-34.85757,-56.14234],[-34.85717,-56.14193],[-34.85611,-56.14226],[-34.85527,-56.14112],[-34.85765,-56.13680],[-34.85910,-56.13796],[-34.86052,-56.13494],[-34.86124,-56.13498],[-34.86179,-56.13382],[-34.86594,-56.13412],[-34.86581,-56.13521],[-34.86451,-56.13705],[-34.86634,-56.13742],[-34.86618,-56.13874],[-34.86992,-56.13932],[-34.87460,-56.14753],[-34.86957,-56.15172],[-34.86995,-56.15236],[-34.86207,-56.15147],[-34.85757,-56.15332]],
+  "Malvín Norte": [[-34.87332,-56.12565],[-34.87124,-56.11594],[-34.87578,-56.11229],[-34.87814,-56.11110],[-34.88355,-56.11126],[-34.88459,-56.11483],[-34.88445,-56.11870],[-34.88352,-56.12389],[-34.88167,-56.12628],[-34.88181,-56.12825],[-34.87527,-56.12614],[-34.87339,-56.12677],[-34.87332,-56.12565]],
+  "Cerro": [[-34.87137,-56.24738],[-34.87250,-56.24422],[-34.87438,-56.24197],[-34.87567,-56.24177],[-34.87841,-56.24315],[-34.87924,-56.24522],[-34.87891,-56.24610],[-34.88173,-56.24559],[-34.88340,-56.24400],[-34.88555,-56.24543],[-34.88737,-56.24561],[-34.88987,-56.24385],[-34.89136,-56.24439],[-34.89453,-56.24157],[-34.89569,-56.24282],[-34.89303,-56.24334],[-34.89319,-56.24440],[-34.89635,-56.24495],[-34.89700,-56.24743],[-34.89632,-56.25132],[-34.89693,-56.25342],[-34.89543,-56.25330],[-34.89548,-56.25368],[-34.88995,-56.25481],[-34.88915,-56.25862],[-34.88745,-56.25864],[-34.88730,-56.26110],[-34.88828,-56.26273],[-34.88940,-56.26282],[-34.89013,-56.26636],[-34.88916,-56.26504],[-34.88687,-56.26416],[-34.87223,-56.26710],[-34.87411,-56.26291],[-34.87367,-56.26259],[-34.87238,-56.25293],[-34.87165,-56.25288],[-34.87237,-56.25273],[-34.87137,-56.24738]],
+};
+
+const PRESET_ZONES = Object.keys(BARRIO_POLIGONOS).map(nombre => ({
+  name: nombre,
+  type: 'polygon',
+  coords: BARRIO_POLIGONOS[nombre].map(([lat,lng]) => ({lat, lng}))
+}));
+
+// Sub-zonas sin límite oficial del INE: van como círculo aproximado.
+PRESET_ZONES.push(
+  { name:'Cruz de Carrasco', type:'circle', lat:-34.8490, lng:-56.0560, radius:600 },
+  { name:'Marconi', type:'circle', lat:-34.8330, lng:-56.1740, radius:500 }
+);
+
+/* ---------- Utilidades geo ---------- */
+function toRad(d){ return d*Math.PI/180; }
+function toDeg(r){ return r*180/Math.PI; }
+
+function haversine(a,b){
+  const R=6371000;
+  const dLat=toRad(b.lat-a.lat), dLng=toRad(b.lng-a.lng);
+  const s=Math.sin(dLat/2)**2 + Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(s));
+}
+function bearing(a,b){
+  const y=Math.sin(toRad(b.lng-a.lng))*Math.cos(toRad(b.lat));
+  const x=Math.cos(toRad(a.lat))*Math.sin(toRad(b.lat)) - Math.sin(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.cos(toRad(b.lng-a.lng));
+  return (toDeg(Math.atan2(y,x))+360)%360;
+}
+function destPoint(start, bearingDeg, dist){
+  const R=6371000;
+  const br=toRad(bearingDeg);
+  const lat1=toRad(start.lat), lng1=toRad(start.lng);
+  const lat2=Math.asin(Math.sin(lat1)*Math.cos(dist/R)+Math.cos(lat1)*Math.sin(dist/R)*Math.cos(br));
+  const lng2=lng1+Math.atan2(Math.sin(br)*Math.sin(dist/R)*Math.cos(lat1), Math.cos(dist/R)-Math.sin(lat1)*Math.sin(lat2));
+  return { lat: toDeg(lat2), lng: toDeg(lng2) };
+}
+function pointInPolygon(point, poly){
+  let inside=false;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const xi=poly[i].lng, yi=poly[i].lat;
+    const xj=poly[j].lng, yj=poly[j].lat;
+    const intersect = ((yi>point.lat)!==(yj>point.lat)) &&
+      (point.lng < (xj-xi)*(point.lat-yi)/(yj-yi)+xi);
+    if(intersect) inside=!inside;
+  }
+  return inside;
+}
+function zoneCenter(zone){
+  if(zone.type==='polygon'){
+    let latSum=0,lngSum=0;
+    zone.coords.forEach(p=>{ latSum+=p.lat; lngSum+=p.lng; });
+    return { lat: latSum/zone.coords.length, lng: lngSum/zone.coords.length };
+  }
+  return { lat: zone.lat, lng: zone.lng };
+}
+function zoneRadius(zone){
+  if(zone.type==='polygon'){
+    const c = zoneCenter(zone);
+    let max=0;
+    zone.coords.forEach(p=>{ const d=haversine(c,p); if(d>max) max=d; });
+    return max;
+  }
+  return zone.radius;
+}
+function fmtDist(m){
+  if(m<1000) return Math.round(m)+' m';
+  return (m/1000).toFixed(1)+' km';
+}
+function fmtDur(s){
+  const min=Math.round(s/60);
+  if(min<60) return min+' min';
+  const h=Math.floor(min/60), m=min%60;
+  return h+'h '+m+'min';
+}
+
+/* ---------- Toast ---------- */
+let toastTimer;
+function toast(msg){
+  const el=document.getElementById('toast');
+  el.textContent=msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>el.classList.remove('show'), 2600);
+}
+
+/* ---------- Mapa ---------- */
+function initMap(){
+  map = L.map('map', { zoomControl:false }).setView([-34.9011, -56.1645], 14); // Montevideo por defecto
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom:19,
+    attribution:'&copy; OpenStreetMap'
+  }).addTo(map);
+  L.control.zoom({position:'bottomleft'}).addTo(map);
+
+  map.on('click', onMapClick);
+
+  renderFavorites();
+  renderZones();
+}
+
+function onMapClick(e){
+  if(placingZone){
+    zonePendingCenter = { lat: e.latlng.lat, lng: e.latlng.lng };
+    placingZone = false;
+    document.getElementById('btnZone').classList.remove('on');
+    openNameModal('Radio de la zona (metros)', '200', (val)=>{
+      const radius = parseFloat(val) || 200;
+      const zone = { id: Date.now().toString(), type:'circle', lat: zonePendingCenter.lat, lng: zonePendingCenter.lng, radius, name: 'Zona a evitar' };
+      zonas.push(zone);
+      saveZones(zonas);
+      renderZones();
+      toast('Zona marcada para evitar');
+    });
+    return;
+  }
+  if(placingOrigin){
+    myPos = { lat: e.latlng.lat, lng: e.latlng.lng };
+    updateMyMarker(null);
+    placingOrigin = false;
+    document.getElementById('btnSetOrigin').classList.remove('on');
+    toast('Punto de partida marcado a mano');
+    if(destPos) calculateRoute();
+    return;
+  }
+  // click normal: fija destino
+  setDestination(e.latlng.lat, e.latlng.lng, 'Destino');
+}
+
+/* ---------- Ubicación en vivo ---------- */
+function initGeolocation(){
+  if(!navigator.geolocation){
+    toast('Este navegador no soporta geolocalización');
+    return;
+  }
+  navigator.geolocation.watchPosition(pos=>{
+    myPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    updateMyMarker(pos.coords.accuracy);
+    updateFootstepsProgress();
+    checkOffRoute();
+  }, err=>{
+    toast('No pude obtener tu ubicación — tocá 📌 para marcarla a mano');
+  }, { enableHighAccuracy:true, maximumAge:2000, timeout:15000 });
+}
+
+function updateMyMarker(accuracy){
+  if(!myMarker){
+    const icon = L.divIcon({
+      className:'',
+      html:'<div style="width:16px;height:16px;border-radius:50%;background:#4da3ff;border:3px solid #fff;box-shadow:0 0 0 2px rgba(77,163,255,0.4);"></div>',
+      iconSize:[16,16], iconAnchor:[8,8]
+    });
+    myMarker = L.marker([myPos.lat,myPos.lng], {icon, zIndexOffset:1000}).addTo(map);
+    map.setView([myPos.lat,myPos.lng], 16);
+  } else {
+    myMarker.setLatLng([myPos.lat,myPos.lng]);
+  }
+  if(accuracy){
+    if(!myAccCircle){
+      myAccCircle = L.circle([myPos.lat,myPos.lng], {radius:accuracy, color:'#4da3ff', weight:1, fillOpacity:0.08}).addTo(map);
+    } else {
+      myAccCircle.setLatLng([myPos.lat,myPos.lng]);
+      myAccCircle.setRadius(accuracy);
+    }
+  }
+}
+
+/* ---------- Favoritos ---------- */
+function renderFavorites(){
+  // limpiar marcadores previos
+  favoritos.forEach(f=>{
+    if(f._marker) map.removeLayer(f._marker);
+    const m = L.marker([f.lat,f.lng], { title:f.name }).addTo(map).bindPopup(f.name);
+    m.on('click', ()=> setDestination(f.lat, f.lng, f.name));
+    f._marker = m;
+  });
+  const list = document.getElementById('favList');
+  list.innerHTML='';
+  if(favoritos.length===0){
+    list.innerHTML='<div class="empty-msg">Todavía no guardaste lugares.</div>';
+  }
+  favoritos.forEach(f=>{
+    const div=document.createElement('div');
+    div.className='list-item';
+    div.innerHTML=`<div class="info"><span class="name">${f.name}</span><span class="sub">Tocá para ir</span></div>`;
+    const del=document.createElement('button');
+    del.textContent='✕';
+    del.onclick=(ev)=>{ ev.stopPropagation(); deleteFavorite(f.id); };
+    div.appendChild(del);
+    div.onclick=()=> setDestination(f.lat, f.lng, f.name);
+    list.appendChild(div);
+  });
+}
+function deleteFavorite(id){
+  const f = favoritos.find(x=>x.id===id);
+  if(f && f._marker) map.removeLayer(f._marker);
+  favoritos = favoritos.filter(x=>x.id!==id);
+  saveFavs(favoritos.map(({_marker, ...rest})=>rest));
+  renderFavorites();
+}
+
+/* ---------- Zonas a evitar ---------- */
+function renderZones(){
+  Object.values(zoneLayers).forEach(l=>map.removeLayer(l));
+  zoneLayers = {};
+  const zoneStyle = { color:'#4a0f0f', weight:2, fillColor:'#7a1f1f', fillOpacity:0.32, dashArray:'5,4', interactive:false };
+  zonas.forEach(z=>{
+    let layer;
+    if(z.type==='polygon'){
+      layer = L.polygon(z.coords.map(c=>[c.lat,c.lng]), zoneStyle).addTo(map);
+    } else {
+      layer = L.circle([z.lat,z.lng], { ...zoneStyle, radius:z.radius }).addTo(map);
+    }
+    layer.bindPopup(z.name);
+    zoneLayers[z.id]=layer;
+  });
+  const list = document.getElementById('zoneList');
+  list.innerHTML='';
+  if(zonas.length===0){
+    list.innerHTML='<div class="empty-msg">No marcaste zonas a evitar.</div>';
+  }
+  zonas.forEach(z=>{
+    const div=document.createElement('div');
+    div.className='list-item';
+    const sub = z.type==='polygon' ? 'Límite real del barrio' : `Radio ${Math.round(z.radius)} m`;
+    div.innerHTML=`<div class="info"><span class="name">${z.name}</span><span class="sub">${sub}</span></div>`;
+    const del=document.createElement('button');
+    del.textContent='✕';
+    del.onclick=()=> deleteZone(z.id);
+    div.appendChild(del);
+    list.appendChild(div);
+  });
+}
+function deleteZone(id){
+  zonas = zonas.filter(z=>z.id!==id);
+  saveZones(zonas);
+  renderZones();
+  toast('Zona eliminada');
+}
+
+/* ---------- Modal de nombre/valor ---------- */
+function openNameModal(title, placeholder, onOk){
+  const modal=document.getElementById('nameModal');
+  document.getElementById('modalTitle').textContent=title;
+  const input=document.getElementById('modalInput');
+  input.value='';
+  input.placeholder=placeholder;
+  modal.classList.add('show');
+  input.focus();
+  const ok=document.getElementById('modalOk');
+  const cancel=document.getElementById('modalCancel');
+  function cleanup(){
+    modal.classList.remove('show');
+    ok.onclick=null; cancel.onclick=null;
+  }
+  ok.onclick=()=>{ const v=input.value.trim(); cleanup(); if(v) onOk(v); };
+  cancel.onclick=()=> cleanup();
+}
+
+/* ---------- Buscar destino (Nominatim) ---------- */
+async function searchPlace(query){
+  if(!query.trim()) return;
+  try{
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if(data.length===0){ toast('No encontré ese lugar'); return; }
+    const r=data[0];
+    setDestination(parseFloat(r.lat), parseFloat(r.lon), r.display_name.split(',')[0]);
+  }catch(e){
+    toast('Error buscando el lugar');
+  }
+}
+
+/* ---------- Destino y ruta ---------- */
+function setDestination(lat,lng,name){
+  destPos = {lat,lng};
+  if(destMarker) map.removeLayer(destMarker);
+  destMarker = L.marker([lat,lng], {title:name}).addTo(map).bindPopup(name).openPopup();
+  if(!myPos){ toast('Esperando tu ubicación...'); return; }
+  calculateRoute();
+}
+
+async function fetchOSRM(waypoints, profile){
+  const coords = waypoints.map(p=>`${p.lng},${p.lat}`).join(';');
+  const url = `https://router.project-osrm.org/route/v1/${profile}/${coords}?overview=full&geometries=geojson`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if(data.code!=='Ok') throw new Error('sin ruta');
+  const route = data.routes[0];
+  return {
+    coords: route.geometry.coordinates.map(c=>({lat:c[1], lng:c[0]})),
+    distance: route.distance,
+    duration: route.duration
+  };
+}
+
+function routeIntersectsZone(coords, zone){
+  if(zone.type==='polygon'){
+    return coords.some(p=>pointInPolygon(p, zone.coords));
+  }
+  for(const p of coords){
+    if(haversine(p, {lat:zone.lat,lng:zone.lng}) < zone.radius) return true;
+  }
+  return false;
+}
+function firstIntersectingZone(coords){
+  for(const z of zonas){
+    if(routeIntersectsZone(coords, z)) return z;
+  }
+  return null;
+}
+function closestIndexToPoint(coords, point){
+  let best=0, bestD=Infinity;
+  coords.forEach((c,i)=>{
+    const d=haversine(c,point);
+    if(d<bestD){ bestD=d; best=i; }
+  });
+  return best;
+}
+function computeDetourPoint(coords, zone, side){
+  const center = zoneCenter(zone);
+  const radius = Math.min(zoneRadius(zone), 1200); // tope: barrios grandes no mandan el desvío por las nubes
+  const idx = closestIndexToPoint(coords, center);
+  const a = coords[Math.max(0,idx-3)];
+  const b = coords[Math.min(coords.length-1, idx+3)];
+  const localBearing = bearing(a,b);
+  const offsetBearing = (localBearing + (side===0?90:-90) + 360) % 360;
+  const dist = radius + 250;
+  return destPoint(center, offsetBearing, dist);
+}
+
+async function calculateRoute(){
+  if(!myPos || !destPos) return;
+  toast('Calculando ruta...');
+  let route;
+  try{
+    route = await fetchOSRM([myPos, destPos], currentProfile);
+  }catch(e){
+    toast('No pude calcular la ruta para ese modo/lugar');
+    return;
+  }
+
+  const rutaDirecta = route.coords;
+  let warn = false;
+  const zonaCruzada = firstIntersectingZone(rutaDirecta);
+
+  if(zonaCruzada){
+    let mejorRuta = route;
+    let sigueCruzando = true;
+    // probamos como mucho 2 desvíos alternativos (izquierda / derecha de la zona),
+    // calculados siempre desde la ruta original — nunca se van apilando uno sobre otro.
+    for(let lado=0; lado<2 && sigueCruzando; lado++){
+      const via = computeDetourPoint(rutaDirecta, zonaCruzada, lado);
+      try{
+        const candidata = await fetchOSRM([myPos, via, destPos], currentProfile);
+        const cruzaAlgo = !!firstIntersectingZone(candidata.coords);
+        mejorRuta = candidata;
+        sigueCruzando = cruzaAlgo;
+      }catch(e){ /* seguimos con el otro lado */ }
+    }
+    route = mejorRuta;
+    warn = sigueCruzando;
+  }
+
+  drawRoute(route, warn);
+}
+
+function drawRoute(route, warn){
+  if(routeLine) map.removeLayer(routeLine);
+  // línea guía tenue debajo de las huellas, tipo trazo de tinta desvaída
+  routeLine = L.polyline(route.coords.map(c=>[c.lat,c.lng]), {color:'#5a3a1a', weight:3, opacity:0.35, dashArray:'1,8'}).addTo(map);
+  map.fitBounds(routeLine.getBounds(), {padding:[60,60]});
+  buildFootsteps(route);
+
+  document.getElementById('routeInfo').classList.add('show');
+  document.getElementById('routeDist').textContent = fmtDist(route.distance);
+  document.getElementById('routeDur').textContent = fmtDur(route.duration);
+  document.getElementById('routeWarn').style.display = warn ? 'block' : 'none';
+}
+
+function clearRoute(){
+  if(routeLine){ map.removeLayer(routeLine); routeLine=null; }
+  if(destMarker){ map.removeLayer(destMarker); destMarker=null; }
+  clearFootsteps();
+  destPos=null;
+  document.getElementById('routeInfo').classList.remove('show');
+}
+
+/* ---------- Huellas de pasos (estilo Mapa del Merodeador) ---------- */
+let footstepMarkers = [];  // [{marker, cumDist, faded}]
+let routeCumDist = [];     // distancia acumulada paralela a routeCoordsRef
+let routeCoordsRef = null;
+
+function buildFootsteps(route){
+  clearFootsteps();
+  const coords = route.coords;
+  const cum=[0];
+  for(let i=1;i<coords.length;i++){
+    cum.push(cum[i-1] + haversine(coords[i-1], coords[i]));
+  }
+  const total = cum[cum.length-1];
+  const spacing = 16; // metros entre cada huella
+  let nextDist = spacing;
+  let side = 0;
+  let idx = 0;
+  while(nextDist < total){
+    while(idx < cum.length-2 && cum[idx+1] < nextDist) idx++;
+    const a = coords[idx], b = coords[idx+1];
+    const segLen = (cum[idx+1]-cum[idx]) || 1;
+    const t = (nextDist-cum[idx])/segLen;
+    const lat = a.lat + (b.lat-a.lat)*t;
+    const lng = a.lng + (b.lng-a.lng)*t;
+    const brg = bearing(a,b);
+    const p = destPoint({lat,lng}, brg + (side===0?90:-90), 2.2); // pequeño paso alternado a cada lado
+    const icon = L.divIcon({
+      className:'footstep-icon',
+      html:`<div class="footstep"></div>`,
+      iconSize:[7,7], iconAnchor:[3,3]
+    });
+    const m = L.marker([p.lat,p.lng], {icon, interactive:false, zIndexOffset:100}).addTo(map);
+    footstepMarkers.push({ marker:m, cumDist:nextDist, faded:false });
+    side = 1-side;
+    nextDist += spacing;
+  }
+  routeCumDist = cum;
+  routeCoordsRef = coords;
+}
+function clearFootsteps(){
+  footstepMarkers.forEach(f=>map.removeLayer(f.marker));
+  footstepMarkers=[];
+  routeCumDist=[];
+  routeCoordsRef=null;
+}
+function updateFootstepsProgress(){
+  if(!myPos || footstepMarkers.length===0 || !routeCoordsRef) return;
+  const idx = closestIndexToPoint(routeCoordsRef, myPos);
+  const traveled = routeCumDist[idx] || 0;
+  footstepMarkers.forEach(f=>{
+    if(!f.faded && f.cumDist < traveled - 8){
+      f.faded = true;
+      const el = f.marker.getElement();
+      if(el){ el.style.transition='opacity 1.2s'; el.style.opacity='0'; }
+      setTimeout(()=>{ if(footstepMarkers.includes(f)) map.removeLayer(f.marker); }, 1300);
+    }
+  });
+}
+
+/* ---------- Recalcular sola si te desviaste del camino ---------- */
+let lastRecalcTime = 0;
+const DESVIO_METROS = 40;       // qué tan lejos del trazado antes de recalcular
+const RECALC_COOLDOWN_MS = 15000; // no recalcular más de una vez cada 15s
+
+function checkOffRoute(){
+  if(!myPos || !destPos || !routeCoordsRef || routeCoordsRef.length===0) return;
+  const idx = closestIndexToPoint(routeCoordsRef, myPos);
+  const distAlTrazado = haversine(myPos, routeCoordsRef[idx]);
+  if(distAlTrazado > DESVIO_METROS && Date.now() - lastRecalcTime > RECALC_COOLDOWN_MS){
+    lastRecalcTime = Date.now();
+    toast('Te desviaste — recalculando ruta...');
+    calculateRoute();
+  }
+}
+
+/* ---------- Eventos UI ---------- */
+document.getElementById('goBtn').onclick=()=> searchPlace(document.getElementById('search').value);
+document.getElementById('search').addEventListener('keydown', e=>{
+  if(e.key==='Enter') searchPlace(e.target.value);
+});
+
+document.querySelectorAll('.mode-btn').forEach(btn=>{
+  btn.onclick=()=>{
+    document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    currentProfile = btn.dataset.profile;
+    if(destPos) calculateRoute();
+  };
+});
+
+document.getElementById('btnLocate').onclick=()=>{
+  if(myPos) map.setView([myPos.lat,myPos.lng], 16);
+  else toast('Todavía no tengo tu ubicación');
+};
+
+document.getElementById('btnSetOrigin').onclick=(e)=>{
+  placingOrigin = !placingOrigin;
+  e.target.classList.toggle('on', placingOrigin);
+  toast(placingOrigin ? 'Tocá el mapa donde querés arrancar' : 'Cancelado');
+};
+
+document.getElementById('btnFavorite').onclick=()=>{
+  if(!myPos){ toast('Todavía no tengo tu ubicación'); return; }
+  openNameModal('Nombre del lugar', 'Ej: Casa, Trabajo...', (name)=>{
+    const fav = { id: Date.now().toString(), lat: myPos.lat, lng: myPos.lng, name };
+    favoritos.push(fav);
+    saveFavs(favoritos.map(({_marker, ...rest})=>rest));
+    renderFavorites();
+    toast('Lugar guardado: '+name);
+  });
+};
+
+document.getElementById('btnZone').onclick=(e)=>{
+  placingZone = !placingZone;
+  e.target.classList.toggle('on', placingZone);
+  toast(placingZone ? 'Tocá el mapa donde está la zona a evitar' : 'Cancelado');
+};
+
+document.getElementById('btnList').onclick=()=>{
+  document.getElementById('bottomSheet').classList.toggle('open');
+};
+document.getElementById('sheetHandle').onclick=()=>{
+  document.getElementById('bottomSheet').classList.remove('open');
+};
+
+document.getElementById('btnClearRoute').onclick=clearRoute;
+
+/* ---------- Alternar mapa pergamino / normal ---------- */
+const STORAGE_KEY_ESTILO = 'mimapa_estilo_normal';
+function applyMapStyle(normal){
+  document.body.classList.toggle('normal-map', normal);
+  document.getElementById('btnToggleMap').classList.toggle('active', normal);
+}
+const estiloGuardado = localStorage.getItem(STORAGE_KEY_ESTILO) === '1';
+applyMapStyle(estiloGuardado);
+document.getElementById('btnToggleMap').onclick=()=>{
+  const normalAhora = !document.body.classList.contains('normal-map');
+  applyMapStyle(normalAhora);
+  localStorage.setItem(STORAGE_KEY_ESTILO, normalAhora ? '1' : '0');
+  toast(normalAhora ? 'Mapa normal' : 'Mapa del Merodeador');
+};
+document.getElementById('btnPreset').onclick = () => {
+  const presetIds = new Set(PRESET_ZONES.map(p => 'preset-' + p.name));
+  zonas = zonas.filter(z => !presetIds.has(z.id)); // saca versiones viejas para refrescarlas
+  PRESET_ZONES.forEach(p => {
+    zonas.push({
+      id: 'preset-' + p.name,
+      type: p.type || 'polygon',
+      coords: p.coords,
+      lat: p.lat, lng: p.lng, radius: p.radius,
+      name: p.name,
+      presetName: p.name
+    });
+  });
+  saveZones(zonas);
+  renderZones();
+
+  // saltar la cámara para que se vean todas las zonas recién cargadas
+  const capas = Object.values(zoneLayers);
+  if(capas.length){
+    const grupo = L.featureGroup(capas);
+    map.fitBounds(grupo.getBounds(), { padding:[40,40] });
+  }
+  toast(`${PRESET_ZONES.length} zonas cargadas/actualizadas`);
+};
+
+/* ---------- Arranque ---------- */
+initMap();
+initGeolocation();
+</script>
+</body>
+</html>
