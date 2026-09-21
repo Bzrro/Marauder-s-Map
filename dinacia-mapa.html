@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>DINACIA — Mapa</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<style>
+  :root {
+    --azul-osc: #0d2b4e;
+    --azul: #1b4f8c;
+    --azul-med: #2e6db4;
+    --azul-claro: #eaf2fb;
+    --acento: #ffcc33;
+    --panel: #ffffff;
+    --ink: #10233c;
+    --ink-soft: #5c7291;
+    --line: #d7e3f2;
+    --shadow: 0 10px 28px rgba(13, 43, 78, 0.22);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--azul-osc);
+    color: var(--ink);
+    overflow: hidden;
+  }
+  #map { position: absolute; inset: 0; z-index: 0; }
+
+  /* Tinte azulado sobre las tiles */
+  .leaflet-tile-pane { filter: grayscale(0.35) sepia(0.35) hue-rotate(175deg) saturate(1.7) brightness(1.05); }
+
+  .topbar {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 500;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px 10px;
+    background: linear-gradient(180deg, rgba(13,43,78,0.92), rgba(13,43,78,0));
+    pointer-events: none;
+  }
+  .topbar * { pointer-events: auto; }
+  .brand {
+    color: #fff; font-weight: 700; font-size: 1rem;
+    display: flex; align-items: center; gap: 8px;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  }
+  .brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--acento); box-shadow: 0 0 0 4px rgba(255,204,51,0.25); }
+
+  #pistaBtn {
+    background: var(--panel);
+    border: none;
+    color: var(--azul-osc);
+    font-size: 1.3rem;
+    width: 46px; height: 46px;
+    border-radius: 50%;
+    box-shadow: var(--shadow);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease;
+  }
+  #pistaBtn.active {
+    background: var(--azul);
+    color: #fff;
+  }
+  #pistaBtn:active { transform: scale(0.92); }
+
+  #locateBtn {
+    position: absolute; z-index: 500; right: 14px; bottom: 80px;
+    width: 44px; height: 44px; border-radius: 50%; border: none;
+    background: var(--panel); box-shadow: var(--shadow);
+    font-size: 1.15rem; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--azul);
+    transition: bottom 0.28s ease;
+  }
+  #locateBtn.raised { bottom: calc(46vh + 16px); }
+
+  #accBadge {
+    position: absolute; z-index: 500; left: 14px; bottom: 80px;
+    background: rgba(13,43,78,0.85); color: #fff;
+    font-size: 0.72rem; font-weight: 600;
+    padding: 6px 11px; border-radius: 999px;
+    display: none; align-items: center; gap: 5px;
+    transition: bottom 0.28s ease;
+  }
+  #accBadge.show { display: flex; }
+  #accBadge.warn { background: rgba(196,90,20,0.9); }
+  #accBadge.raised { bottom: calc(46vh + 16px); }
+
+  .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 500;
+    background: var(--panel);
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -8px 24px rgba(13,43,78,0.18);
+    max-height: 46vh;
+    display: flex; flex-direction: column;
+    transition: max-height 0.28s ease;
+  }
+  .sheet.collapsed { max-height: 64px; }
+  .sheet.collapsed .list { display: none; }
+  .sheet-handle {
+    width: 40px; height: 4px; border-radius: 2px; background: var(--line);
+    margin: 10px auto 6px;
+  }
+  .sheet-title {
+    padding: 0 18px 8px; font-size: 0.95rem; font-weight: 700; color: var(--azul-osc);
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer;
+  }
+  .sheet-title .chev {
+    font-size: 0.75rem; color: var(--ink-soft); margin-left: 8px;
+    transition: transform 0.28s ease;
+  }
+  .sheet.collapsed .sheet-title .chev { transform: rotate(180deg); }
+  .sheet-title span.mode {
+    font-size: 0.72rem; font-weight: 600; color: var(--azul-med);
+    background: var(--azul-claro); padding: 3px 9px; border-radius: 999px;
+  }
+  .list { overflow-y: auto; padding: 0 10px 14px; }
+  .poi {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 10px; border-radius: 12px; cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .poi:active { background: var(--azul-claro); }
+  .poi.selected { background: var(--azul-claro); border-color: var(--azul-med); }
+  .poi-ico {
+    width: 34px; height: 34px; border-radius: 10px;
+    background: var(--azul-claro); color: var(--azul);
+    display: flex; align-items: center; justify-content: center; font-size: 1.05rem;
+    flex-shrink: 0;
+  }
+  .poi.selected .poi-ico { background: var(--azul); color: #fff; }
+  .poi-txt { flex: 1; min-width: 0; }
+  .poi-name { font-size: 0.9rem; font-weight: 600; color: var(--ink); line-height: 1.25; }
+  .poi-sub { font-size: 0.76rem; color: var(--ink-soft); margin-top: 1px; }
+  .poi-dist { font-size: 0.74rem; color: var(--azul-med); font-weight: 600; white-space: nowrap; }
+
+  .leaflet-popup-content-wrapper { border-radius: 12px; }
+  .leaflet-popup-content { font-size: 0.85rem; color: var(--ink); }
+
+  .divicon-user {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: var(--azul-med); border: 3px solid #fff;
+    box-shadow: 0 0 0 6px rgba(46,109,180,0.25), 0 2px 6px rgba(0,0,0,0.3);
+  }
+  .divicon-user.plane {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--acento); border: none;
+    box-shadow: 0 0 0 7px rgba(255,204,51,0.28), 0 3px 8px rgba(0,0,0,0.35);
+    display: flex; align-items: center; justify-content: center; font-size: 15px;
+  }
+  .divicon-poi {
+    width: 30px; height: 30px; border-radius: 50% 50% 50% 0;
+    background: var(--azul); transform: rotate(-45deg);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 3px 8px rgba(13,43,78,0.35);
+  }
+  .divicon-poi span { transform: rotate(45deg); font-size: 13px; }
+  .divicon-poi.plane { background: var(--acento); }
+  .divicon-poi.plane span { color: var(--azul-osc); }
+
+  /* Selector de piso */
+  #floorSelector {
+    position: absolute; z-index: 500; top: 66px; left: 50%; transform: translateX(-50%);
+    display: none; gap: 4px;
+    background: rgba(255,255,255,0.95); padding: 4px; border-radius: 999px;
+    box-shadow: var(--shadow);
+  }
+  #floorSelector.show { display: flex; }
+  #floorSelector button {
+    border: none; background: transparent; color: var(--ink-soft);
+    font-size: 0.8rem; font-weight: 700; padding: 6px 13px; border-radius: 999px;
+    cursor: pointer;
+  }
+  #floorSelector button.active { background: var(--azul); color: #fff; }
+
+  /* Tira de fotos del lugar seleccionado */
+  #photoStrip {
+    position: absolute; z-index: 500; left: 0; right: 0;
+    bottom: calc(46vh + 14px);
+    display: none; gap: 8px; padding: 10px 14px;
+    overflow-x: auto;
+    transition: bottom 0.28s ease;
+  }
+  #photoStrip.show { display: flex; }
+  #photoStrip img {
+    height: 64px; width: 88px; object-fit: cover; border-radius: 10px;
+    box-shadow: var(--shadow); cursor: pointer; flex-shrink: 0;
+  }
+
+  /* Lightbox de foto a pantalla completa */
+  #lightbox {
+    position: fixed; inset: 0; z-index: 2000; background: rgba(10,20,35,0.92);
+    display: none; align-items: center; justify-content: center; padding: 24px;
+  }
+  #lightbox.show { display: flex; }
+  #lightbox img { max-width: 100%; max-height: 82vh; border-radius: 10px; transition: transform 0.05s linear; touch-action: none; }
+  #lightbox img.zoomable { max-height: 90vh; background: #fff; cursor: grab; }
+  #lightbox .hint {
+    position: absolute; bottom: 22px; left: 0; right: 0; text-align: center;
+    color: rgba(255,255,255,0.65); font-size: 0.78rem;
+  }
+  #lightbox .close {
+    position: absolute; top: 22px; right: 20px; color: #fff; font-size: 1.6rem;
+    background: rgba(255,255,255,0.15); width: 40px; height: 40px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; cursor: pointer; border: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="topbar">
+  <div class="brand"><span class="dot"></span> DINACIA</div>
+  <button id="pistaBtn" title="Modo pista">✈️</button>
+</div>
+
+<div id="floorSelector"></div>
+
+<button id="locateBtn" class="raised" title="Mi ubicación">📍</button>
+<div id="accBadge"></div>
+<div id="photoStrip"></div>
+
+<div id="lightbox">
+  <button class="close" id="lightboxClose">✕</button>
+  <img id="lightboxImg" src="" alt="">
+  <div class="hint" id="lightboxHint">Pellizcá para agrandar · doble toque para restablecer</div>
+</div>
+
+<div class="sheet" id="sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title" id="sheetTitle">
+    <span>Lugares <span class="mode" id="modeLabel">Modo normal</span></span>
+    <span class="chev">▾</span>
+  </div>
+  <div class="list" id="list"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+(function () {
+  // ---------------------------------------------------------------
+  // PUNTOS — editá acá nombre / coordenadas / vía (paso obligatorio) / fotos / piso
+  // ---------------------------------------------------------------
+  // "floor": opcional. Si el lugar está en un piso con plano cargado (ver FLOORS
+  //          más abajo), poné acá el mismo id del piso (ej: "pb", "p1"). Si no
+  //          tiene piso asignado, el punto se ve siempre, en cualquier piso activo.
+  // "photos": opcional. Array de rutas relativas a imágenes (subilas junto con
+  //           el HTML a una carpeta /img en el mismo repo). Ej: ["img/dgac-1.jpg"]
+  const POIS = [
+    {
+      id: "dn",
+      name: "Director Nacional",
+      sub: "Aviación Civil e Infraestructura Aeronáutica",
+      lat: -34.8466667, lng: -56.0291667,
+      icon: "🏛️",
+      floor: "pb",
+      photos: []
+    },
+    {
+      id: "dgia",
+      name: "DGIA",
+      sub: "Dirección General de Infraestructura Aeronáutica",
+      lat: -34.8459722, lng: -56.0290000,
+      icon: "🏢",
+      floor: "pb",
+      photos: []
+    },
+    {
+      id: "dgac",
+      name: "DGAC",
+      sub: "Dirección General de Aviación Civil",
+      lat: -34.8460278, lng: -56.0293333,
+      icon: "🏢",
+      floor: "pb",
+      photos: []
+    },
+    {
+      id: "director_secretaria",
+      name: "Director de Secretaría",
+      sub: "Junto al despacho del Director Nacional",
+      lat: -34.8466800, lng: -56.0291500,
+      icon: "🗂️",
+      floor: "pb",
+      photos: []
+    },
+    {
+      id: "tesoreria",
+      name: "Tesorería",
+      sub: "",
+      lat: -34.8464167, lng: -56.0291111,
+      icon: "💼",
+      floor: "pb",
+      photos: []
+    },
+    {
+      id: "personal_aero",
+      name: "Personal Aeronáutico",
+      sub: "⚠ coordenada aproximada — confirmar",
+      lat: -34.8466667, lng: -56.0291667,  // TODO: ajustar (plus code 5X3C+HMC sin resolver con precisión)
+      icon: "👥",
+      photos: []
+    },
+    {
+      id: "admin_finanzas",
+      name: "Director de Administración y Finanzas",
+      sub: "1er piso — se accede por la escalera",
+      lat: -34.8466667, lng: -56.0291667,
+      icon: "🪜",
+      floor: "p1",
+      via: [ { lat: -34.846600, lng: -56.029201 } ], // punto de la escalera: el recorrido pasa por acá antes de llegar
+      photos: []
+    },
+    {
+      id: "rna",
+      name: "Registro Nacional de Aeronaves",
+      sub: "",
+      lat: -34.8460278, lng: -56.0281389,
+      icon: "📋",
+      floor: "pb",
+      photos: []
+    }
+  ];
+
+  // ---------------------------------------------------------------
+  // PUNTOS DE REFERENCIA PARA QR — un QR pegado en un lugar fijo del
+  // edificio (ej: entrada de cada piso) le dice a la app "asumí que
+  // el usuario está parado acá", sin depender del GPS.
+  // ---------------------------------------------------------------
+  // Cómo generar el QR de cada piso:
+  // 1. Agregá acá un objeto por punto de referencia (uno por piso, o más
+  //    si querés varios QR por piso — ej. uno en cada entrada).
+  // 2. La URL del QR es la misma del mapa + "?ref=SU_ID", ejemplo:
+  //    https://bzrro.github.io/Marauder-s-Map/dinacia-mapa.html?ref=entrada_p1
+  // 3. Generás ese link como QR en cualquier generador (qr-code-generator.com)
+  //    e imprimís el cartel para pegar en ese punto físico del edificio.
+  const QR_REFS = [
+    {
+      id: "entrada_pb",
+      floor: "pb",
+      lat: -34.84635, lng: -56.02895,
+      label: "Entrada — Planta baja"
+    },
+    {
+      id: "entrada_p1",
+      floor: "p1",
+      lat: -34.846600, lng: -56.029201,
+      label: "Escalera — 1er piso"
+    }
+    // Agregá más acá a medida que definas dónde van los carteles con QR.
+  ];
+  // ---------------------------------------------------------------
+  // PISOS — plano esquemático de cada piso. Se ve como una imagen a
+  // pantalla completa (con zoom y arrastre táctil), NO calzado sobre
+  // el GPS — así evitamos el desajuste que da tratar de "pegar" un
+  // esquema inventado sobre coordenadas reales.
+  // ---------------------------------------------------------------
+  const FLOORS = [
+    { id: "pb", label: "PB", image: "planta-baja.png" },
+    { id: "p1", label: "1er piso", image: "planta-alta.png" }
+  ];
+
+  // ---------------------------------------------------------------
+  // MAPA
+  // ---------------------------------------------------------------
+  const center = [-34.84635, -56.02895];
+  // Límite geográfico: no deja alejarse (pan) de la zona de DINACIA,
+  // pero el zoom (acercarse) sigue libre dentro de ese rectángulo.
+  const DINACIA_BOUNDS = [[-34.8480, -56.0310], [-34.8445, -56.0270]];
+
+  const map = L.map("map", {
+    zoomControl: false,
+    attributionControl: true,
+    maxBounds: DINACIA_BOUNDS,
+    maxBoundsViscosity: 1.0,
+    minZoom: 17
+  }).setView(center, 18);
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    subdomains: "abc",
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  L.control.zoom({ position: "bottomright" }).addTo(map);
+
+  let pistaMode = false;
+  let userLatLng = null;
+  let userMarker = null;
+  let accuracyCircle = null;
+  const poiMarkers = {};
+  const routeLines = {};
+  let selectedId = null;
+
+  function poiIcon(poi, plane) {
+    return L.divIcon({
+      className: "",
+      html: '<div class="divicon-poi' + (plane ? " plane" : "") + '"><span>' + poi.icon + "</span></div>",
+      iconSize: [30, 30],
+      iconAnchor: [15, 28]
+    });
+  }
+
+  POIS.forEach(poi => {
+    const marker = L.marker([poi.lat, poi.lng], { icon: poiIcon(poi, false) })
+      .addTo(map)
+      .bindPopup("<b>" + poi.name + "</b>" + (poi.sub ? "<br>" + poi.sub : ""));
+    marker.on("click", () => selectPoi(poi.id));
+    poiMarkers[poi.id] = marker;
+  });
+
+  // ---------------------------------------------------------------
+  // LISTA INFERIOR
+  // ---------------------------------------------------------------
+  const listEl = document.getElementById("list");
+
+  function haversine(a, b) {
+    const R = 6371000;
+    const toRad = d => d * Math.PI / 180;
+    const dLat = toRad(b.lat - a.lat), dLng = toRad(b.lng - a.lng);
+    const s = Math.sin(dLat/2)**2 + Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLng/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1-s));
+  }
+
+  function renderList() {
+    listEl.innerHTML = "";
+    POIS.forEach(poi => {
+      const row = document.createElement("div");
+      row.className = "poi" + (poi.id === selectedId ? " selected" : "");
+      let distTxt = "";
+      if (userLatLng) {
+        const d = Math.round(haversine(userLatLng, poi));
+        distTxt = d < 1000 ? d + " m" : (d/1000).toFixed(1) + " km";
+      }
+      row.innerHTML =
+        '<div class="poi-ico">' + poi.icon + '</div>' +
+        '<div class="poi-txt"><div class="poi-name">' + poi.name + '</div>' +
+        (poi.sub ? '<div class="poi-sub">' + poi.sub + '</div>' : '') + '</div>' +
+        '<div class="poi-dist">' + (poi.photos && poi.photos.length ? '📷 ' : '') + distTxt + '</div>';
+      row.addEventListener("click", () => selectPoi(poi.id, true));
+      listEl.appendChild(row);
+    });
+  }
+
+  function selectPoi(id, flyTo) {
+    selectedId = id;
+    renderList();
+    const poi = POIS.find(p => p.id === id);
+    if (flyTo) map.flyTo([poi.lat, poi.lng], 19, { duration: 0.6 });
+    poiMarkers[id].openPopup();
+    drawRoute(poi);
+    setSheetCollapsed(true);
+    if (poi.floor) setFloor(poi.floor);
+    renderPhotoStrip(poi);
+  }
+
+  function setSheetCollapsed(collapsed) {
+    sheetCollapsed = collapsed;
+    document.getElementById("sheet").classList.toggle("collapsed", collapsed);
+    document.getElementById("locateBtn").classList.toggle("raised", !collapsed);
+    document.getElementById("accBadge").classList.toggle("raised", !collapsed);
+    document.getElementById("photoStrip").style.bottom = collapsed ? "78px" : "calc(46vh + 14px)";
+  }
+  let sheetCollapsed = false;
+  document.getElementById("sheetTitle").addEventListener("click", () => {
+    setSheetCollapsed(!sheetCollapsed);
+  });
+
+  // ---------------------------------------------------------------
+  // FOTOS — tira de miniaturas del lugar seleccionado + lightbox
+  // ---------------------------------------------------------------
+  const photoStripEl = document.getElementById("photoStrip");
+  const lightboxEl = document.getElementById("lightbox");
+  const lightboxImgEl = document.getElementById("lightboxImg");
+
+  function renderPhotoStrip(poi) {
+    photoStripEl.innerHTML = "";
+    if (!poi.photos || poi.photos.length === 0) {
+      photoStripEl.classList.remove("show");
+      return;
+    }
+    poi.photos.forEach(src => {
+      const img = document.createElement("img");
+      img.src = src;
+      img.alt = poi.name;
+      img.addEventListener("click", () => openLightbox(src, poi.name));
+      photoStripEl.appendChild(img);
+    });
+    photoStripEl.classList.add("show");
+  }
+
+  function openLightbox(src, alt, isPlan) {
+    lightboxImgEl.src = src;
+    lightboxImgEl.alt = alt;
+    lightboxEl.classList.add("show");
+    resetPinchZoom();
+    lightboxImgEl.classList.toggle("zoomable", !!isPlan);
+    document.getElementById("lightboxHint").style.display = isPlan ? "block" : "none";
+  }
+  document.getElementById("lightboxClose").addEventListener("click", () => {
+    lightboxEl.classList.remove("show");
+  });
+  lightboxEl.addEventListener("click", e => {
+    if (e.target === lightboxEl) lightboxEl.classList.remove("show");
+  });
+
+  // --- Pellizcar para agrandar / arrastrar para mover (solo planos) ---
+  let pz = { scale: 1, x: 0, y: 0 };
+  function resetPinchZoom() {
+    pz = { scale: 1, x: 0, y: 0 };
+    applyPinchZoom();
+  }
+  function applyPinchZoom() {
+    lightboxImgEl.style.transform = "translate(" + pz.x + "px," + pz.y + "px) scale(" + pz.scale + ")";
+  }
+  let pinchStartDist = null, pinchStartScale = 1;
+  let dragStart = null, dragOrigin = null;
+
+  lightboxImgEl.addEventListener("touchstart", e => {
+    if (!lightboxImgEl.classList.contains("zoomable")) return;
+    if (e.touches.length === 2) {
+      pinchStartDist = touchDist(e.touches);
+      pinchStartScale = pz.scale;
+    } else if (e.touches.length === 1) {
+      dragStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      dragOrigin = { x: pz.x, y: pz.y };
+    }
+  }, { passive: true });
+
+  lightboxImgEl.addEventListener("touchmove", e => {
+    if (!lightboxImgEl.classList.contains("zoomable")) return;
+    if (e.touches.length === 2 && pinchStartDist) {
+      e.preventDefault();
+      const d = touchDist(e.touches);
+      pz.scale = Math.min(5, Math.max(1, pinchStartScale * (d / pinchStartDist)));
+      applyPinchZoom();
+    } else if (e.touches.length === 1 && dragStart && pz.scale > 1) {
+      e.preventDefault();
+      pz.x = dragOrigin.x + (e.touches[0].clientX - dragStart.x);
+      pz.y = dragOrigin.y + (e.touches[0].clientY - dragStart.y);
+      applyPinchZoom();
+    }
+  }, { passive: false });
+
+  lightboxImgEl.addEventListener("touchend", e => {
+    if (e.touches.length === 0) { pinchStartDist = null; dragStart = null; }
+  });
+
+  lightboxImgEl.addEventListener("dblclick", () => resetPinchZoom());
+
+  function touchDist(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  // ---------------------------------------------------------------
+  // PISOS — overlay del plano + filtro de pines por piso activo
+  // ---------------------------------------------------------------
+  let activeFloor = null;
+
+  function setupFloorSelector() {
+    const wrap = document.getElementById("floorSelector");
+    if (FLOORS.length === 0) return;
+    wrap.classList.add("show");
+    FLOORS.forEach(f => {
+      const btn = document.createElement("button");
+      btn.textContent = f.label;
+      btn.dataset.floorId = f.id;
+      btn.addEventListener("click", () => {
+        setFloor(activeFloor === f.id ? null : f.id);
+        openLightbox(f.image, "Plano — " + f.label, true);
+      });
+      wrap.appendChild(btn);
+    });
+  }
+
+  function setFloor(floorId) {
+    activeFloor = floorId;
+    document.querySelectorAll("#floorSelector button").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.floorId === floorId);
+    });
+    // Los puntos sin "floor" asignado siempre se ven; los que tienen
+    // floor solo se muestran cuando coincide con el piso activo (o si
+    // no hay ningún piso activo, se muestran todos).
+    POIS.forEach(poi => {
+      const marker = poiMarkers[poi.id];
+      const visible = !poi.floor || !floorId || poi.floor === floorId;
+      if (visible && !map.hasLayer(marker)) marker.addTo(map);
+      if (!visible && map.hasLayer(marker)) map.removeLayer(marker);
+    });
+  }
+
+  setupFloorSelector();
+
+  // ---------------------------------------------------------------
+  // CHECK-IN POR QR — si la URL trae ?ref=id (lo que trae el QR
+  // pegado en el edificio), usamos ESA posición fija como "acá estás"
+  // en vez de esperar al GPS, que adentro no anda. Si además el QR
+  // apunta a un piso con plano cargado, lo activamos automáticamente.
+  // ---------------------------------------------------------------
+  function applyQrCheckIn() {
+    const params = new URLSearchParams(window.location.search);
+    const refId = params.get("ref");
+    if (!refId) return false;
+    const ref = QR_REFS.find(r => r.id === refId);
+    if (!ref) return false;
+
+    userLatLng = { lat: ref.lat, lng: ref.lng };
+    if (!userMarker) {
+      userMarker = L.marker([ref.lat, ref.lng], { icon: userIcon(pistaMode), zIndexOffset: 1000 }).addTo(map);
+    } else {
+      userMarker.setLatLng([ref.lat, ref.lng]);
+    }
+    if (accuracyCircle) { map.removeLayer(accuracyCircle); accuracyCircle = null; }
+
+    const badge = document.getElementById("accBadge");
+    badge.classList.add("show");
+    badge.classList.remove("warn");
+    badge.textContent = "📌 Ubicación por QR: " + ref.label;
+
+    if (ref.floor) setFloor(ref.floor);
+    map.setView([ref.lat, ref.lng], 19);
+    renderList();
+    return true;
+  }
+
+  const checkedInByQr = applyQrCheckIn();
+  // Si no vino de un QR, seguimos con el GPS normal como hasta ahora.
+  if (!checkedInByQr) startWatch();
+
+  // ---------------------------------------------------------------
+  // MODO PISTA — dibuja el trayecto como línea de pista punteada
+  // ---------------------------------------------------------------
+  function clearRoutes() {
+    Object.values(routeLines).forEach(layers => layers.forEach(l => map.removeLayer(l)));
+    for (const k in routeLines) delete routeLines[k];
+  }
+
+  function drawRoute(poi) {
+    clearRoutes();
+    if (!userLatLng) return;
+    const path = [userLatLng];
+    if (poi.via) poi.via.forEach(v => path.push(v));
+    path.push({ lat: poi.lat, lng: poi.lng });
+
+    const latlngs = path.map(p => [p.lat, p.lng]);
+    const layers = [];
+
+    if (pistaMode) {
+      // Franja de asfalto (base ancha) + línea central de pista punteada
+      layers.push(L.polyline(latlngs, {
+        color: "#2b2f36", weight: 16, opacity: 0.9, lineCap: "round", lineJoin: "round"
+      }).addTo(map));
+      layers.push(L.polyline(latlngs, {
+        color: "#3a3f47", weight: 12, opacity: 0.9, lineCap: "round", lineJoin: "round"
+      }).addTo(map));
+      layers.push(L.polyline(latlngs, {
+        color: "#ffffff", weight: 3, dashArray: "16 14", opacity: 0.95, lineCap: "round"
+      }).addTo(map));
+    } else {
+      layers.push(L.polyline(latlngs, {
+        color: "#2e6db4", weight: 3, dashArray: "6 8", lineCap: "round"
+      }).addTo(map));
+    }
+    routeLines[poi.id] = layers;
+  }
+
+  document.getElementById("pistaBtn").addEventListener("click", () => {
+    pistaMode = !pistaMode;
+    document.getElementById("pistaBtn").classList.toggle("active", pistaMode);
+    document.getElementById("modeLabel").textContent = pistaMode ? "Modo pista" : "Modo normal";
+    POIS.forEach(poi => poiMarkers[poi.id].setIcon(poiIcon(poi, pistaMode)));
+    if (userMarker) userMarker.setIcon(userIcon(pistaMode));
+    if (selectedId) drawRoute(POIS.find(p => p.id === selectedId));
+  });
+
+  // ---------------------------------------------------------------
+  // GEOLOCALIZACIÓN EN VIVO
+  // ---------------------------------------------------------------
+  function userIcon(plane) {
+    return L.divIcon({
+      className: "",
+      html: plane ? '<div class="divicon-user plane">✈️</div>' : '<div class="divicon-user"></div>',
+      iconSize: plane ? [30, 30] : [18, 18],
+      iconAnchor: plane ? [15, 15] : [9, 9]
+    });
+  }
+
+  function updateUserPosition(lat, lng, accuracy) {
+    userLatLng = { lat, lng };
+    if (!userMarker) {
+      userMarker = L.marker([lat, lng], {
+        icon: userIcon(pistaMode),
+        zIndexOffset: 1000
+      }).addTo(map);
+      accuracyCircle = L.circle([lat, lng], { radius: accuracy, color: "#2e6db4", weight: 1, fillOpacity: 0.08 }).addTo(map);
+    } else {
+      userMarker.setLatLng([lat, lng]);
+      accuracyCircle.setLatLng([lat, lng]);
+      accuracyCircle.setRadius(accuracy);
+    }
+    updateAccBadge(accuracy);
+    renderList();
+    if (selectedId) drawRoute(POIS.find(p => p.id === selectedId));
+  }
+
+  const ACC_WARN_THRESHOLD = 25; // metros — a partir de acá avisamos que la precisión es baja
+  function updateAccBadge(accuracy) {
+    const badge = document.getElementById("accBadge");
+    const bad = accuracy > ACC_WARN_THRESHOLD;
+    badge.classList.add("show");
+    badge.classList.toggle("warn", bad);
+    badge.textContent = bad
+      ? "📶 Precisión baja (±" + Math.round(accuracy) + " m) — típico en interiores"
+      : "📍 ±" + Math.round(accuracy) + " m";
+  }
+
+  function startWatch() {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.watchPosition(
+      pos => updateUserPosition(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy || 15),
+      err => console.warn("Geolocalización no disponible:", err.message),
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+    );
+  }
+
+  document.getElementById("locateBtn").addEventListener("click", () => {
+    if (userLatLng) {
+      map.flyTo([userLatLng.lat, userLatLng.lng], 19, { duration: 0.6 });
+    } else {
+      startWatch();
+    }
+  });
+
+  renderList();
+})();
+</script>
+</body>
+</html>
