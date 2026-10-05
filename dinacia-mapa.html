@@ -601,13 +601,28 @@
       [-34.8461162, -56.0290965],
       [-34.8461230, -56.0290011]
   ];
-  function dibujarCamino(pts, color, ancho, dash, texto) {
-    L.polyline(pts, { color: "#ffffff", weight: ancho + 4, opacity: 0.85, lineCap: "round", lineJoin: "round", interactive: false }).addTo(map);
-    return L.polyline(pts, { color: color, weight: ancho, dashArray: dash, lineCap: "round", lineJoin: "round" })
+  // Los caminos se dibujan como las calles del mapa: relleno claro con borde suave.
+  // El ancho está en metros, así que crece al hacer zoom igual que una calle real.
+  const callesitas = [];
+  function metrosPorPixel(zoom) { return 156543.03 * Math.cos(34.846 * Math.PI / 180) / Math.pow(2, zoom); }
+  function dibujarCamino(pts, anchoM, relleno, borde, texto, caps) {
+    const casing = L.polyline(pts, { color: borde, weight: 6, opacity: 1, lineCap: caps, lineJoin: "round", interactive: false }).addTo(map);
+    const fill = L.polyline(pts, { color: relleno, weight: 4, opacity: 1, lineCap: caps, lineJoin: "round" })
       .addTo(map).bindTooltip(texto, { sticky: true });
+    callesitas.push({ casing, fill, anchoM });
   }
-  dibujarCamino(CAMINO_DGIA, "#e53935", 4, "1 9", "Camino a DGIA · unos 33 m a pie");
-  dibujarCamino(PASARELA, "#5b7fa6", 6, null, "Pasarela cubierta (edificio principal ↔ DGIA)");
+  function ajustarCallesitas() {
+    const mpp = metrosPorPixel(map.getZoom());
+    callesitas.forEach(c => {
+      const w = Math.max(3, c.anchoM / mpp);
+      c.fill.setStyle({ weight: w });
+      c.casing.setStyle({ weight: w + Math.max(2, 0.7 / mpp) });
+    });
+  }
+  map.on("zoom zoomend", ajustarCallesitas);
+  dibujarCamino(CAMINO_DGIA, 2.0, "#ffffff", "#bcd9f0", "Camino a DGIA · unos 33 m a pie", "round");
+  dibujarCamino(PASARELA, 2.6, "#d6eafb", "#9cc4e8", "Pasarela cubierta (edificio principal ↔ DGIA)", "butt");
+  ajustarCallesitas();
 
   POIS.forEach(poi => {
     const marker = L.marker([poi.lat, poi.lng], { icon: poiIcon(poi, false) })
@@ -1035,6 +1050,16 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => musicToast.classList.remove("show"), 4200);
   }
+  // Si no suena, averiguamos por qué (lo más común: falta subir musica.mp3 al repo)
+  function musicFail() {
+    musicBtn.classList.remove("active");
+    fetch("musica.mp3", { method: "HEAD", cache: "no-store" })
+      .then(r => showMusicToast(r.ok
+        ? "El navegador no dejó reproducir el audio. Tocá 🎵 otra vez"
+        : "No encuentro musica.mp3 en el repositorio (error " + r.status + ")"))
+      .catch(() => showMusicToast("No se pudo cargar la música. ¿Hay conexión?"));
+  }
+  musicEl.addEventListener("error", () => { if (musicWanted || !musicEl.paused) musicFail(); });
   musicBtn.addEventListener("click", () => {
     if (musicEl.paused) {
       const p = musicEl.play();
@@ -1043,7 +1068,7 @@
         musicBtn.classList.add("active");
         showMusicToast("🎵 The Miracle of Flight — Scott Buckley (CC BY 4.0)");
       };
-      if (p && p.then) p.then(ok).catch(() => showMusicToast("No se pudo reproducir la música"));
+      if (p && p.then) p.then(ok).catch(() => musicFail());
       else ok();
     } else {
       musicEl.pause();
